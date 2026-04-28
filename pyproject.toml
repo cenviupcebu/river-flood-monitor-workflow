@@ -1,7 +1,11 @@
 [project]
 name = "river-flood-workflow"
 version = "0.1.0"
-description = "Add your description here"
+description = "Workflow for river flood forecast"
+authors = [
+    {name="David Urueña Ramirez", email="duruenaramirez@redcross.nl"},
+    {name="Phuoc Phung", email="pphung@redcross.nl"},
+]
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
