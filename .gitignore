@@ -14,3 +14,10 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Logs
+logs/
+
+# Data
+silver/
+gold/
