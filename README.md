@@ -2,6 +2,8 @@
 
 A Python tool for monitoring riverine forecast developed by NLRC to support Start Network Philippines.
 
+Code development assisted by: [Copilot]
+
 ## Setup
 
 ### 1. Install `uv`
@@ -26,7 +28,18 @@ Or via pip: `pip install uv`
 uv sync
 ```
 
-This creates a `.venv` with Python 3.13 and all required packages.
+This creates a `.venv` with all required runtime dependencies (including
+scientific packages such as numpy, pandas, xarray, scipy, geopandas, and rasterio).
+
+If you also need philflood from git or a local checkout, use the bootstrap scripts:
+
+```powershell
+.\uv-sync.ps1
+```
+
+```bash
+./uv-sync.sh
+```
 
 ### 3. Run the workflow
 
@@ -35,7 +48,7 @@ This creates a `.venv` with Python 3.13 and all required packages.
 ```bash
 uv run python ops/pipeline/run_daily_monitoring_etl.py `
     --date 2026-05-15 `
-    --run-spec config/run_specs/daily_monitoring_etl.template.yaml `
+    --run-spec config/run_specs/daily_monitoring_etl.yaml `
     --basins config/basins/Cagayan_01.yaml
 ```
 
@@ -59,7 +72,8 @@ flood-ops/                         ← new repo root
 │   ├── __init__.py
 │   ├── cli.py                     console-script: flood-ops-daily
 │   └── etl/
-│       ├── __init__.py            orchestrator (run_daily_monitoring_etl)
+│       ├── __init__.py            package exports
+│       ├── step0_input_evaluation.py orchestration (run_daily_monitoring_etl)
 │       ├── utils.py               shared dataclasses + expand_template
 │       ├── run_spec.py            YAML loader + settings dataclasses
 │       ├── step1_ingest.py        resolve forecast path

@@ -49,7 +49,7 @@ def schedule_monitoring(
 
 if __name__ == "__main__":
     schedule_monitoring(
-        basin_dir="ops/configs/basins",
-        run_spec="ops/configs/run_specs/daily_monitoring_etl.template.yaml",
+        basin_dir="config/basins",
+        run_spec="config/run_specs/daily_monitoring_etl.template.yaml",
         interval_hours=24.0,
     )

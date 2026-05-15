@@ -1,0 +1,87 @@
+# Prototype run-spec for the daily flood monitoring ETL.
+#
+# Copy this file to daily_monitoring_etl.yaml and fill in the real data paths.
+#
+# Detection modes
+# ---------------
+# Prototype mode  — set inputs.precomputed_impacts_template to a pre-built
+#   impact cube JSON (exported from NB07 or run_reforecast_month.py).
+#   No GRIB or spatial data required.
+#
+# Detection mode  — leave inputs.precomputed_impacts_template blank (or omit it)
+#   and fill in the detection.* paths.  The pipeline runs the full NB07
+#   spatial flood-detection algorithm against the live GloFAS GRIB.
+
+run_name: "daily_flood_monitoring_prototype"
+
+ingest:
+  # Step 1 — path to the GloFAS ensemble GRIB for this issue date.
+  # Variables available: {date}, {yyyymmdd}, {yyyy}, {mm}, {dd}, {basin_id}
+  # forecast_path_template: "data/bronze/glofas/forecast/{date}/glofas_{date}.grib"
+  forecast_path_template: "data/bronze/glofas/forecast/dis_00_{yyyymmdd}00.nc"
+  download_if_missing: false
+  downloader_command_template: null   # reserved for future CDS download hook
+
+inputs:
+  # Step 4 — OEP thresholds produced by NB05.
+  oep_json: "data/silver/risk_profiles/oep_curves_all_units.json"
+
+  # Prototype Step 2-3 bridge — one JSON file per basin/date exported from NB07
+  # or calibration/scripts/run_reforecast_month.py.
+  # Variables: {date}, {yyyymmdd}, {yyyy}, {mm}, {dd}, {basin_id}
+  # Leave blank (or remove) to use detection mode instead.
+  precomputed_impacts_template: 
+
+detection:
+  # ── NB07 algorithm hyper-parameters ──────────────────────────────────────
+  # Discharge RP threshold: a GloFAS cell is "active" when RP >= t0_years
+  t0_years: 2.0
+  # Minimum contiguous flood patch area (km²) to qualify a member as a flood member
+  a_min_km2: 100.0
+  # Flood depth (metres) for counting affected population (WorldPop)
+  depth_threshold_m: 0.02
+  # 8-neighbour (Moore=2) or 4-neighbour (von Neumann=1) connectivity
+  cc_connectivity: 2
+  # GRIB shortname for daily mean discharge
+  grib_shortname: "dis24"
+  # Return periods to compute in impact space (drives tier thresholds)
+  flood_detect_rps: [2, 5, 10, 20]
+
+  # ── Spatial data paths (required for detection mode) ─────────────────────
+  # NB01 EVT calibration output (Parquet with GPD fits per GloFAS cell)
+  evt_params_parquet: "data/silver/risk_profiles/evt_pot_calibration - Cagayan.parquet"
+  # JRC Global Flood Hazard Map root (subdirectories with RP-labelled TIFFs)
+  jrc_root: "data/bronze/jrc_flood_maps"
+  # WorldPop population raster (GeoTIFF, EPSG:4326)
+  worldpop_tif: "data/bronze/population/worldpop_phl_100m.tif"
+  # ADM3 municipality boundaries (GeoJSON or Shapefile, EPSG:4326)
+  adm3_geojson: "data/admin-areas/phl_adm3.geojson"
+
+decision:
+  # Step 5 — activation rules (from NB07 Cell 14)
+  persist_days: 2     # consecutive qualifying lead-days required
+  min_lead: 5         # earliest operational lead (days before predicted peak)
+  oep_min: 100        # exclude units with OEP_RP2 < 100 (no exposure model)
+  rule_tiers:
+    T1:
+      rp: 2
+      p_thr: 0.50
+      n_req: 1
+      label: "Moderate Watch"
+    T2:
+      rp: 5
+      p_thr: 0.50
+      n_req: 1
+      label: "High Alert"
+    T3:
+      rp: 10
+      p_thr: 0.35
+      n_req: 1
+      label: "Very High Activation"
+
+output:
+  # Step 6 — where to write trigger decisions.
+  output_dir_template: "data/gold/trigger_decisions/{date}"
+  format: "json"   # or "csv"
+  # Log files: logs/{yyyy}/{mm}/<run_name>_<datetime>.txt
+  log_dir_template: "logs/{yyyy}/{mm}"

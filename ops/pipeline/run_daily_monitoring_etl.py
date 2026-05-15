@@ -6,13 +6,13 @@ Usage::
     # With uv (recommended)
     uv run python ops/pipeline/run_daily_monitoring_etl.py \\
         --date 2026-05-15 \\
-        --run-spec ops/configs/run_specs/daily_monitoring_etl.template.yaml \\
-        --basins ops/configs/basins/Cagayan_01.yaml
+        --run-spec config/run_specs/daily_monitoring_etl.template.yaml \
+        --basins config/basins/Cagayan_01.yaml
 
     # Or via the installed console script
-    flood-ops-daily --date 2026-05-15 \\
-        --run-spec ops/configs/run_specs/daily_monitoring_etl.template.yaml \\
-        --basins ops/configs/basins/Cagayan_01.yaml
+    flood-ops-daily --date 2026-05-15 \
+        --run-spec config/run_specs/daily_monitoring_etl.template.yaml \
+        --basins config/basins/Cagayan_01.yaml
 """
 
 import sys
