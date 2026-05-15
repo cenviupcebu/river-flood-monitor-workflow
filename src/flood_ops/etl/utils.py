@@ -17,9 +17,17 @@ DEFAULT_RULE_TIERS: Dict[str, Dict[str, Any]] = {
 
 
 def expand_template(template: str, issue_date: date, basin_id: Optional[str] = None) -> str:
-    """Substitute {date}, {yyyy}, {mm}, {dd}, {basin_id} placeholders in a path template."""
+    """Substitute date placeholders in a path template.
+
+    Supported placeholders:
+    - {date}: YYYY-MM-DD
+    - {yyyymmdd}: YYYYMMDD
+    - {yyyy}, {mm}, {dd}
+    - {basin_id}
+    """
     return template.format(
         date=issue_date.isoformat(),
+        yyyymmdd=issue_date.strftime("%Y%m%d"),
         yyyy=issue_date.strftime("%Y"),
         mm=issue_date.strftime("%m"),
         dd=issue_date.strftime("%d"),
