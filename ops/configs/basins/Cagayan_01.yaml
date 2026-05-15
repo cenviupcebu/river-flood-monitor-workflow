@@ -1,0 +1,25 @@
+---
+# Basin configuration for the Cagayan sub-basin.
+# Copy from the main GLOFAS_ImpactFloodForecasting_PHL repo after calibration.
+
+basin_id: Cagayan_01
+country_iso3: PHL
+hydrobasins_level: 6
+hydrobasins_id: 5060030230
+
+glofas_point_ids:
+  - PHL_00000  # TODO: replace with actual GloFAS point ID(s)
+
+data_root: data
+
+evt:
+  method: POT-GPD
+  threshold_m3s: 0.0
+  run_length_days: 5
+  gpd_shape_xi: 0.0
+  gpd_scale_sigma: 1.0
+  event_rate_per_year: 0.0
+
+vulnerability:
+  depth_threshold_m: 0.3
+  impact_fraction: 1.0

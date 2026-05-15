@@ -1,0 +1,50 @@
+# Prototype run-spec for the daily flood monitoring ETL.
+#
+# Copy this file to daily_monitoring_etl.yaml and fill in the real data paths.
+
+run_name: "daily_flood_monitoring_prototype"
+
+ingest:
+  # Step 1 — path to the GloFAS ensemble GRIB for this issue date.
+  # Variables available: {date}, {yyyy}, {mm}, {dd}, {basin_id}
+  forecast_path_template: "data/raw/glofas/forecast/{date}/glofas_{date}.grib"
+  download_if_missing: false
+  downloader_command_template: null   # reserved for future CDS download hook
+
+inputs:
+  # Step 4 — OEP thresholds produced by NB05.
+  oep_json: "data/processed/Riskprofiles/oep_curves_all_units.json"
+
+  # Prototype Step 2-3 bridge — one JSON file per basin/date exported from NB07
+  # or calibration/scripts/run_reforecast_month.py.
+  # Variables: {date}, {yyyy}, {mm}, {dd}, {basin_id}
+  precomputed_impacts_template: "data/processed/ops/impacts/{date}/{basin_id}_impacts.json"
+
+decision:
+  # Step 5 — activation rules (from NB07 Cell 14)
+  persist_days: 2     # consecutive qualifying lead-days required
+  min_lead: 5         # earliest operational lead (days before predicted peak)
+  oep_min: 100        # exclude units with OEP_RP2 < 100 (no exposure model)
+  rule_tiers:
+    T1:
+      rp: 2
+      p_thr: 0.50
+      n_req: 1
+      label: "Moderate Watch"
+    T2:
+      rp: 5
+      p_thr: 0.50
+      n_req: 1
+      label: "High Alert"
+    T3:
+      rp: 10
+      p_thr: 0.35
+      n_req: 1
+      label: "Very High Activation"
+
+output:
+  # Step 6 — where to write trigger decisions.
+  output_dir_template: "data/processed/ops/trigger_decisions/{date}"
+  format: "json"   # or "csv"
+  # Log files: logs/{yyyy}/{mm}/<run_name>_<datetime>.txt
+  log_dir_template: "logs/{yyyy}/{mm}"
