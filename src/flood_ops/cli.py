@@ -7,7 +7,7 @@ from datetime import date
 import sys
 from typing import List
 
-from flood_ops.etl import run_daily_monitoring_etl
+from flood_ops.etl.step0_input_evaluation import run_daily_monitoring_etl
 from flood_ops.logging import get_logger
 
 logger = get_logger(__name__)
