@@ -10,8 +10,9 @@ uv.lock          # commit this if you want reproducible installs
 .uv/
 
 # Data — never commit raw forecast files or processed outputs
-data/raw/
-data/processed/
+data/bronze/
+data/silver/
+data/gold/
 
 # Logs
 logs/
