@@ -35,8 +35,8 @@ This creates a `.venv` with Python 3.13 and all required packages.
 ```bash
 uv run python ops/pipeline/run_daily_monitoring_etl.py `
     --date 2026-05-15 `
-    --run-spec ops/configs/run_specs/daily_monitoring_etl.template.yaml `
-    --basins ops/configs/basins/Cagayan_01.yaml
+    --run-spec config/run_specs/daily_monitoring_etl.template.yaml `
+    --basins config/basins/Cagayan_01.yaml
 ```
 
 #### Option 2: Run Jupyter notebook
