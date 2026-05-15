@@ -7,18 +7,18 @@ run_name: "daily_flood_monitoring_prototype"
 ingest:
   # Step 1 — path to the GloFAS ensemble GRIB for this issue date.
   # Variables available: {date}, {yyyy}, {mm}, {dd}, {basin_id}
-  forecast_path_template: "data/raw/glofas/forecast/{date}/glofas_{date}.grib"
+  forecast_path_template: "data/bronze/glofas/forecast/{date}/glofas_{date}.grib"
   download_if_missing: false
   downloader_command_template: null   # reserved for future CDS download hook
 
 inputs:
   # Step 4 — OEP thresholds produced by NB05.
-  oep_json: "data/processed/Riskprofiles/oep_curves_all_units.json"
+  oep_json: "data/silver/risk_profiles/oep_curves_all_units.json"
 
   # Prototype Step 2-3 bridge — one JSON file per basin/date exported from NB07
   # or calibration/scripts/run_reforecast_month.py.
   # Variables: {date}, {yyyy}, {mm}, {dd}, {basin_id}
-  precomputed_impacts_template: "data/processed/ops/impacts/{date}/{basin_id}_impacts.json"
+  precomputed_impacts_template: "data/silver/ops/impacts/{date}/{basin_id}_impacts.json"
 
 decision:
   # Step 5 — activation rules (from NB07 Cell 14)
@@ -44,7 +44,7 @@ decision:
 
 output:
   # Step 6 — where to write trigger decisions.
-  output_dir_template: "data/processed/ops/trigger_decisions/{date}"
+  output_dir_template: "data/gold/trigger_decisions/{date}"
   format: "json"   # or "csv"
   # Log files: logs/{yyyy}/{mm}/<run_name>_<datetime>.txt
   log_dir_template: "logs/{yyyy}/{mm}"
