@@ -42,6 +42,29 @@ class IngestSettings:
 
 
 @dataclass
+class DetectionSettings:
+    """Hyper-parameters for the Step 2 NB07 detection algorithm."""
+
+    # Discharge → RP threshold: cell is "active" when RP >= t0_years
+    t0_years: float = 2.0
+    # Minimum contiguous flood patch area to qualify a member as "flood member"
+    a_min_km2: float = 100.0
+    # Flood depth threshold for counting affected population (metres)
+    depth_threshold_m: float = 0.02
+    # 8-neighbour (Moore) connectivity for connected-component labelling
+    cc_connectivity: int = 2
+    # GRIB variable shortname for daily mean discharge
+    grib_shortname: str = "dis24"
+    # Return periods to evaluate in the impact space
+    flood_detect_rps: List[int] = field(default_factory=lambda: [2, 5, 10, 20])
+    # Paths to spatial resources (required when not using precomputed impacts)
+    evt_params_parquet: str = ""
+    jrc_root: str = ""
+    worldpop_tif: str = ""
+    adm3_geojson: str = ""
+
+
+@dataclass
 class InputSettings:
     """Required data paths consumed in Steps 3-4."""
 
@@ -65,6 +88,7 @@ class PipelineRunSpec:
     run_name: str = "daily_flood_monitoring"
     ingest: Optional[IngestSettings] = None
     inputs: Optional[InputSettings] = None
+    detection: DetectionSettings = field(default_factory=DetectionSettings)
     decision: DecisionSettings = field(default_factory=DecisionSettings)
     output: Optional[OutputSettings] = None
 
@@ -92,6 +116,7 @@ def load_run_spec(path: str) -> PipelineRunSpec:
 
     ingest_cfg = raw.get("ingest") or {}
     inputs_cfg = raw.get("inputs") or {}
+    detection_cfg = raw.get("detection") or {}
     output_cfg = raw.get("output") or {}
     decision_cfg = raw.get("decision") or {}
 
@@ -118,6 +143,22 @@ def load_run_spec(path: str) -> PipelineRunSpec:
             log_dir_template=str(output_cfg.get("log_dir_template", "logs")),
         )
 
+    _default_rps: List[int] = [2, 5, 10, 20]
+    detection = DetectionSettings(
+        t0_years=float(detection_cfg.get("t0_years", 2.0)),
+        a_min_km2=float(detection_cfg.get("a_min_km2", 100.0)),
+        depth_threshold_m=float(detection_cfg.get("depth_threshold_m", 0.02)),
+        cc_connectivity=int(detection_cfg.get("cc_connectivity", 2)),
+        grib_shortname=str(detection_cfg.get("grib_shortname", "dis24")),
+        flood_detect_rps=[
+            int(r) for r in detection_cfg.get("flood_detect_rps", _default_rps)
+        ],
+        evt_params_parquet=str(detection_cfg.get("evt_params_parquet", "")),
+        jrc_root=str(detection_cfg.get("jrc_root", "")),
+        worldpop_tif=str(detection_cfg.get("worldpop_tif", "")),
+        adm3_geojson=str(detection_cfg.get("adm3_geojson", "")),
+    )
+
     rules_raw = decision_cfg.get("rule_tiers") or DEFAULT_RULE_TIERS
     decision = DecisionSettings(
         persist_days=int(decision_cfg.get("persist_days", 2)),
@@ -130,6 +171,7 @@ def load_run_spec(path: str) -> PipelineRunSpec:
         run_name=str(raw.get("run_name", "daily_flood_monitoring")),
         ingest=ingest,
         inputs=inputs,
+        detection=detection,
         decision=decision,
         output=output,
     )
