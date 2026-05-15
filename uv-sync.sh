@@ -1,6 +1,12 @@
 #!/usr/bin/env sh
 # Bootstrap uv environment for flood-ops on Linux / macOS.
 #
+# Flow:
+#   1. Installs Python 3.11 via uv (if needed).
+#   2. Creates / reuses .venv.
+#   3. Runs uv sync to install project dependencies from pyproject.toml/uv.lock.
+#   4. Optionally installs philflood from git or a local checkout.
+#
 # Usage:
 #   ./uv-sync.sh                              # install philflood from git
 #   ./uv-sync.sh --local ../GLOFAS_ImpactFloodForecasting_PHL
@@ -32,12 +38,8 @@ fi
 
 PY=".venv/bin/python"
 
-echo "==> Installing core scientific packages"
-uv pip install --python "$PY" \
-    "climada>=4.0.0,<6.1" \
-    "climada-petals>=4.0.2,<5.0.0" \
-    "pyextremes>=2.3.0" \
-    "ipywidgets>=7.6.0"
+echo "==> Syncing project dependencies"
+uv sync --python "$PY"
 
 if [ -n "$LOCAL_PHILFLOOD" ]; then
     echo "==> Installing philflood from local path: $LOCAL_PHILFLOOD"
@@ -47,9 +49,6 @@ else
     uv pip install --python "$PY" --no-deps \
         "philflood @ git+https://github.com/rodekruis/GLOFAS_ImpactFloodForecasting_PHL.git"
 fi
-
-echo "==> Installing flood-ops (editable)"
-uv pip install --python "$PY" --no-deps -e .
 
 # cfgrib must be installed separately (no binary wheel available on all platforms)
 uv pip install --python "$PY" cfgrib

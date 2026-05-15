@@ -5,9 +5,8 @@
 .DESCRIPTION
     1. Installs Python 3.11 via uv (if not already present).
     2. Creates / reuses .venv.
-    3. Installs philflood's heavy scientific dependencies before syncing
-       (same pattern as the main GLOFAS repo, needed for climada).
-    4. Installs flood-ops in editable mode.
+    3. Runs uv sync to install all project dependencies from pyproject.toml/uv.lock.
+    4. Optionally installs philflood from local path or git.
 
 .PARAMETER PythonVersion
     Python version for the venv (default: 3.11).
@@ -52,14 +51,6 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 
 $pythonExe = ".venv/Scripts/python.exe"
 
-# Heavy deps that must be installed before uv-sync resolves philflood
-$corePkgs = @(
-    "climada>=4.0.0,<6.1",
-    "climada-petals>=4.0.2,<5.0.0",
-    "pyextremes>=2.3.0",
-    "ipywidgets>=7.6.0"
-)
-
 if ($RecreateVenv -and (Test-Path ".venv")) {
     Invoke-Step "Remove existing .venv" { Remove-Item -Recurse -Force ".venv" } "Remove-Item -Recurse -Force .venv"
 }
@@ -70,9 +61,9 @@ if (-not (Test-Path ".venv")) {
     Invoke-Step "Create .venv" { uv venv --python $PythonVersion } "uv venv --python $PythonVersion"
 }
 
-Invoke-Step "Install core scientific packages" {
-    uv pip install --python $pythonExe @corePkgs
-} "uv pip install <core-pkgs>"
+Invoke-Step "Sync project dependencies" {
+    uv sync --python $pythonExe
+} "uv sync --python $pythonExe"
 
 if ($LocalPhilflood) {
     $absPath = (Resolve-Path $LocalPhilflood).Path
@@ -86,9 +77,5 @@ if ($LocalPhilflood) {
     } "uv pip install philflood @ git+..."
 }
 
-Invoke-Step "Install flood-ops (editable)" {
-    uv pip install --python $pythonExe --no-deps -e .
-} "uv pip install --no-deps -e ."
-
-Write-Host "`n✓ Environment ready. Activate with:  .venv\Scripts\Activate.ps1" -ForegroundColor Green
-Write-Host "  Then run:  python ops/pipeline/run_daily_monitoring_etl.py --help" -ForegroundColor Green
+Write-Host "`nEnvironment ready. Activate with:  .venv\Scripts\Activate.ps1" -ForegroundColor Green
+Write-Host "Then run:  python ops/pipeline/run_daily_monitoring_etl.py --help" -ForegroundColor Green
