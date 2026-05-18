@@ -183,6 +183,107 @@ def _build_msg_index(grbs, shortname: str) -> dict:
     }
 
 
+def _build_netcdf_index(
+    ds,
+    var_name: str,
+    time_dim: str,
+    member_dim: Optional[str],
+) -> dict:
+    """Index NetCDF forecast snapshots to match the GRIB lookup contract."""
+    import pandas as pd
+
+    msg_index: dict = {}
+    vt_lookup: dict = {}
+    steps: set = set()
+
+    times = pd.to_datetime(ds[time_dim].values)
+    if member_dim and member_dim in ds[var_name].dims:
+        raw_members = ds[member_dim].values.tolist()
+        members = [int(m) for m in raw_members]
+        member_to_idx = {int(m): i for i, m in enumerate(raw_members)}
+    else:
+        members = [0]
+        member_to_idx = {0: None}
+
+    if len(times) == 0:
+        raise RuntimeError("NetCDF has no forecast times to index")
+
+    t0 = pd.Timestamp(times[0])
+    for t_idx, vt in enumerate(times):
+        vt_ts = pd.Timestamp(vt)
+        step_h = int((vt_ts - t0).total_seconds() // 3600)
+        steps.add(step_h)
+        for m in members:
+            key = (vt_ts, m)
+            msg_index[key] = (t_idx, member_to_idx[m])
+            vt_lookup[(vt_ts, m)] = (key, None)
+
+    return {
+        "msg_index": msg_index,
+        "inits": [],
+        "steps": sorted(steps),
+        "members": sorted(members),
+        "tmpl": None,
+        "vt_lookup": vt_lookup,
+    }
+
+
+def _open_forecast_source(forecast_path: Path, shortname: str):
+    """Open forecast source from NetCDF via xarray."""
+    import numpy as np
+    import xarray as xr
+
+    suffixes = {s.lower() for s in forecast_path.suffixes}
+    is_netcdf = bool(suffixes.intersection({".nc", ".nc4", ".netcdf"}))
+
+    if not is_netcdf:
+        raise RuntimeError(
+            f"Only NetCDF forecast input is supported for now: {forecast_path}"
+        )
+
+    ds = xr.open_dataset(forecast_path)
+
+    var_candidates = [shortname, "dis24", "dis", "discharge"]
+    var_name = next((v for v in var_candidates if v in ds.data_vars), None)
+    if var_name is None and ds.data_vars:
+        var_name = next(iter(ds.data_vars))
+    if var_name is None:
+        ds.close()
+        raise RuntimeError(f"No data variables found in NetCDF: {forecast_path}")
+
+    da = ds[var_name]
+    lat_dim = next((d for d in ("latitude", "lat") if d in da.dims), None)
+    lon_dim = next((d for d in ("longitude", "lon") if d in da.dims), None)
+    time_dim = next((d for d in ("valid_time", "time") if d in da.dims), None)
+    member_dim = next(
+        (d for d in ("number", "member", "ensemble", "perturbationNumber") if d in da.dims),
+        None,
+    )
+
+    if lat_dim is None or lon_dim is None or time_dim is None:
+        ds.close()
+        raise RuntimeError(
+            f"NetCDF variable '{var_name}' must include latitude/longitude/time dimensions"
+        )
+
+    lat_vals = np.asarray(ds[lat_dim].values)
+    lon_vals = np.asarray(ds[lon_dim].values)
+    if lat_vals.ndim == 2:
+        lat_vals = lat_vals[:, 0]
+    if lon_vals.ndim == 2:
+        lon_vals = lon_vals[0, :]
+
+    nc_index = _build_netcdf_index(ds, var_name, time_dim, member_dim)
+    source = {
+        "kind": "netcdf",
+        "ds": ds,
+        "var_name": var_name,
+        "time_dim": time_dim,
+        "member_dim": member_dim,
+    }
+    return source, nc_index, lat_vals.astype(float), lon_vals.astype(float)
+
+
 def _read_grib_snapshot(
     grbs,
     msg_index: dict,
@@ -204,8 +305,17 @@ def _read_grib_snapshot(
         msg_num = msg_index.get(key_data)
         if msg_num is None:
             return None
-        msg = grbs.message(msg_num)
-        data = msg.values
+        if isinstance(grbs, dict) and grbs.get("kind") == "netcdf":
+            ds = grbs["ds"]
+            da = ds[grbs["var_name"]]
+            t_idx, m_idx = msg_num
+            sel = {grbs["time_dim"]: t_idx}
+            if grbs["member_dim"] is not None and m_idx is not None:
+                sel[grbs["member_dim"]] = m_idx
+            data = da.isel(sel).values
+        else:
+            msg = grbs.message(msg_num)
+            data = msg.values
         return data[cell_lat_idx, cell_lon_idx].astype(float)
     except Exception as exc:
         logger.debug("GRIB read error for key %s: %s", key_data, exc)
@@ -296,6 +406,7 @@ def _load_spatial_resources(settings: "DetectionSettings") -> dict:
     """
     import rasterio
     import xarray as xr
+    import numpy as np
     from pathlib import Path
 
     jrc_root = Path(settings.jrc_root)
@@ -628,11 +739,19 @@ def detect_flood_events(
         "threshold_m3s": "u",
         "lambda_events_per_year": "lam",
         "gpd_xi": "xi",
+        "gpd_sigma": "sigma",
         "gpd_scale_sigma": "sigma",
     }
     evt_params = evt_raw.rename(
         columns={k: v for k, v in _col_map.items() if k in evt_raw.columns}
     ).copy()
+    required_evt_cols = {"cell_id", "u", "lam", "xi", "sigma"}
+    missing_evt_cols = sorted(required_evt_cols.difference(set(evt_params.columns)))
+    if missing_evt_cols:
+        raise ValueError(
+            "EVT parameters file is missing required columns after normalization: "
+            f"{missing_evt_cols}. Available columns: {list(evt_raw.columns)}"
+        )
     if "lat" not in evt_params.columns or "lon" not in evt_params.columns:
         ll = evt_params["cell_id"].astype(str).apply(_parse_cell_coords)
         evt_params["lat"] = [v[0] for v in ll]
@@ -658,33 +777,20 @@ def detect_flood_events(
     oep_raw = _json.loads(Path(oep_json_path).read_text(encoding="utf-8"))
     unit_names: List[str] = [r["unit"] for r in oep_raw.get("units", [])]
 
-    # --- Open GRIB -----------------------------------------------------------
-    try:
-        import pygrib  # type: ignore
-    except ImportError as exc:
-        raise ImportError(
-            "pygrib is required for step2 GRIB reading. "
-            "Install it with: pip install pygrib"
-        ) from exc
-
+    # --- Open forecast source (.nc/.nc4) -----------------------------------
     grib_path = Path(forecast_path)
     if not grib_path.exists():
-        raise FileNotFoundError(f"Forecast GRIB not found: {grib_path}")
+        raise FileNotFoundError(f"Forecast file not found: {grib_path}")
 
-    grbs = pygrib.open(str(grib_path))
     try:
-        grib_index = _build_msg_index(grbs, settings.grib_shortname)
+        forecast_src, grib_index, grib_lat1d, grib_lon1d = _open_forecast_source(
+            grib_path, settings.grib_shortname
+        )
     except RuntimeError as exc:
-        grbs.close()
         raise RuntimeError(
-            f"Failed to index GRIB {grib_path}: {exc}"
+            f"Failed to index forecast data {grib_path}: {exc}"
         ) from exc
 
-    # Pre-compute cell → GRIB grid index mapping
-    tmpl_msg = grbs.message(grib_index["tmpl"])
-    lats2d, lons2d = tmpl_msg.latlons()
-    grib_lat1d = lats2d[:, 0]
-    grib_lon1d = lons2d[0, :]
     cell_lats = np.array([_parse_cell_coords(c)[0] for c in basin_cells])
     cell_lons = np.array([_parse_cell_coords(c)[1] for c in basin_cells])
     cell_lat_idx = _nearest_index_1d(grib_lat1d, cell_lats)
@@ -714,7 +820,7 @@ def detect_flood_events(
 
         # Phase 1: detect flood members via connected-component rule
         flood_members = _detect_flood_members_for_lead(
-            grbs=grbs,
+            grbs=forecast_src,
             grib_index=grib_index,
             lead_window=lead_window,
             basin_cells=basin_cells,
@@ -747,7 +853,9 @@ def detect_flood_events(
             # Use the last (peak) valid date in the lead window for impact
             for vdate in reversed(lead_window):
                 q_vals = _read_grib_snapshot(
-                    grbs, grib_index["msg_index"], grib_index["vt_lookup"],
+                    forecast_src,
+                    grib_index["msg_index"],
+                    grib_index["vt_lookup"],
                     vdate, member, init_dt, cell_lat_idx, cell_lon_idx,
                 )
                 if q_vals is not None:
@@ -790,7 +898,10 @@ def detect_flood_events(
                         member, rp_dict
                     )
 
-    grbs.close()
+    if isinstance(forecast_src, dict) and forecast_src.get("kind") == "netcdf":
+        forecast_src["ds"].close()
+    else:
+        forecast_src["grbs"].close()
     logger.info(
         "Step 2 complete — %d units, %d lead days, %d members",
         len(impact_cube), len(lead_days_list), len(all_members),
