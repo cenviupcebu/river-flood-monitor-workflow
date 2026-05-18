@@ -53,9 +53,9 @@ detection:
   # JRC Global Flood Hazard Map root (subdirectories with RP-labelled TIFFs)
   jrc_root: "data/bronze/jrc_flood_maps"
   # WorldPop population raster (GeoTIFF, EPSG:4326)
-  worldpop_tif: "data/bronze/population/worldpop_phl_100m.tif"
+  worldpop_tif: "data/bronze/population/phl_ppp_2020.tif"
   # ADM3 municipality boundaries (GeoJSON or Shapefile, EPSG:4326)
-  adm3_geojson: "data/admin-areas/phl_adm3.geojson"
+  adm3_geojson: "data/admin-areas/PHL_adm3.json"
 
 decision:
   # Step 5 — activation rules (from NB07 Cell 14)
