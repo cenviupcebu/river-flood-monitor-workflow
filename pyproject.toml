@@ -29,6 +29,7 @@ dependencies = [
   "pandas",
   "pyarrow",
   "PyYAML>=6.0",
+  "requests>=2.28",
   "pyextremes>=2.3.0",
   "rasterio",
   "scipy",
