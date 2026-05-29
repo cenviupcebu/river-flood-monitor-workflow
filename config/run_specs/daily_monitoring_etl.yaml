@@ -16,8 +16,8 @@ run_name: "daily_flood_monitoring_prototype"
 
 ingest:
   # Step 1 — path to the GloFAS ensemble GRIB for this issue date.
-  # Variables available: {date}, {yyyymmdd}, {yyyy}, {mm}, {dd}, {basin_id}
-  # forecast_path_template: "data/bronze/glofas/forecast/{date}/glofas_{date}.grib"
+  # Variables available: {date}, {yyyymmdd}, {yyyy}, {mm}, {dd}, {basin_id}, {ens_no}
+  # TODO: add ens_no to forecast path template e.g. dis_{ens_no}_{yyyymmdd}00
   forecast_path_template: "data/bronze/glofas/forecast/dis_00_{yyyymmdd}00.nc"
   download_if_missing: false
   downloader_command_template: null   # reserved for future CDS download hook
@@ -82,6 +82,6 @@ decision:
 output:
   # Step 6 — where to write trigger decisions.
   output_dir_template: "data/gold/trigger_decisions/{date}"
-  format: "json"   # or "csv"
+  format: "csv"   # "json" or "csv"
   # Log files: logs/{yyyy}/{mm}/<run_name>_<datetime>.txt
   log_dir_template: "logs/{yyyy}/{mm}"
