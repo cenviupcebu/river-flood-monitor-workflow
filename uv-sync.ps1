@@ -7,6 +7,7 @@
     2. Creates / reuses .venv.
     3. Runs uv sync to install all project dependencies from pyproject.toml/uv.lock.
     4. Optionally installs philflood from local path or git.
+    5. Installs cfgrib separately.
 
 .PARAMETER PythonVersion
     Python version for the venv (default: 3.11).
@@ -55,27 +56,33 @@ if ($RecreateVenv -and (Test-Path ".venv")) {
     Invoke-Step "Remove existing .venv" { Remove-Item -Recurse -Force ".venv" } "Remove-Item -Recurse -Force .venv"
 }
 
-Invoke-Step "Install Python $PythonVersion" { uv python install $PythonVersion } "uv python install $PythonVersion"
+Invoke-Step "Installing Python $PythonVersion" { uv python install $PythonVersion } "uv python install $PythonVersion"
 
 if (-not (Test-Path ".venv")) {
-    Invoke-Step "Create .venv" { uv venv --python $PythonVersion } "uv venv --python $PythonVersion"
+    Invoke-Step "Creating .venv" { uv venv --python $PythonVersion } "uv venv --python $PythonVersion"
 }
 
-Invoke-Step "Sync project dependencies" {
+Invoke-Step "Syncing project dependencies" {
     uv sync --python $pythonExe
 } "uv sync --python $pythonExe"
 
 if ($LocalPhilflood) {
     $absPath = (Resolve-Path $LocalPhilflood).Path
-    Invoke-Step "Install philflood from local path: $absPath" {
+    Invoke-Step "Installing philflood from local path: $absPath" {
         uv pip install --python $pythonExe --no-deps -e $absPath
-    } "uv pip install --no-deps -e $absPath"
+    } "uv pip install --python $pythonExe --no-deps -e $absPath"
 } else {
-    Invoke-Step "Install philflood from git" {
+    Invoke-Step "Installing philflood from git" {
         uv pip install --python $pythonExe --no-deps `
             "philflood @ git+https://github.com/rodekruis/GLOFAS_ImpactFloodForecasting_PHL.git"
     } "uv pip install philflood @ git+..."
 }
 
-Write-Host "`nEnvironment ready. Activate with:  .venv\Scripts\Activate.ps1" -ForegroundColor Green
-Write-Host "Then run:  python ops/pipeline/run_daily_monitoring_etl.py --help" -ForegroundColor Green
+Invoke-Step "Installing cfgrib" {
+    uv pip install --python $pythonExe cfgrib
+} "uv pip install --python $pythonExe cfgrib"
+
+Write-Host ""
+Write-Host "✓ Environment ready." -ForegroundColor Green
+Write-Host "  Activate:  .venv\Scripts\Activate.ps1" -ForegroundColor Green
+Write-Host "  Run:       flood-monitoring --help" -ForegroundColor Green

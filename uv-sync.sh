@@ -6,6 +6,7 @@
 #   2. Creates / reuses .venv.
 #   3. Runs uv sync to install project dependencies from pyproject.toml/uv.lock.
 #   4. Optionally installs philflood from git or a local checkout.
+#   5. Installs cfgrib separately.
 #
 # Usage:
 #   ./uv-sync.sh                              # install philflood from git
@@ -51,9 +52,10 @@ else
 fi
 
 # cfgrib must be installed separately (no binary wheel available on all platforms)
+echo "==> Installing cfgrib"
 uv pip install --python "$PY" cfgrib
 
 echo ""
 echo "✓ Environment ready."
 echo "  Activate:  source .venv/bin/activate"
-echo "  Run:       python ops/pipeline/run_daily_monitoring_etl.py --help"
+echo "  Run:       flood-monitoring --help"
