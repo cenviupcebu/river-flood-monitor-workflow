@@ -46,7 +46,7 @@ If you also need philflood from git or a local checkout, use the bootstrap scrip
 #### Option 1: Run the CLI tool
 
 ```bash
-uv run python ops/pipeline/run_daily_monitoring_etl.py `
+uv run flood-monitoring `
     --date 2026-05-15 `
     --run-spec config/run_specs/daily_monitoring_etl.yaml `
     --basins config/basins/Cagayan_01.yaml
@@ -57,6 +57,9 @@ uv run python ops/pipeline/run_daily_monitoring_etl.py `
 ```bash
 uv run jupyter lab
 ```
+
+For automated daily runs, schedule the CLI command with an external scheduler
+(Windows Task Scheduler, cron, Airflow, Azure ML schedule).
 
 ### Repo structure:
 
@@ -70,7 +73,7 @@ flood-ops/                         ← new repo root
 │
 ├── src/flood_ops/
 │   ├── __init__.py
-│   ├── cli.py                     console-script: flood-ops-daily
+│   ├── cli.py                     console-script: flood-monitoring
 │   └── etl/
 │       ├── __init__.py            package exports
 │       ├── step0_input_evaluation.py orchestration (run_daily_monitoring_etl)
@@ -85,8 +88,6 @@ flood-ops/                         ← new repo root
 │
 ├── ops/
 │   ├── pipeline/
-│   │   ├── run_daily_monitoring_etl.py   thin shim → flood_ops.cli
-│   │   └── run_monitoring_scheduled.py   24-h loop runner
 │   └── configs/
 │       ├── basins/Cagayan_01.yaml
 │       └── run_specs/
