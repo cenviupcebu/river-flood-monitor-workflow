@@ -19,14 +19,19 @@ from __future__ import annotations
 
 import json
 import re
+import tempfile
 import warnings
 from contextlib import ExitStack
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from flood_ops.logging import get_logger
-from .step3_impact import ImpactCube
+from .step3_impact import (
+    EventPatchImpactInput,
+    ImpactCube,
+    compute_impacts_from_event_patches,
+)
 
 if TYPE_CHECKING:
     import numpy as np
@@ -326,7 +331,7 @@ def _read_grib_snapshot(
 # Connected-component flood detection  (NB07 Cell 3 detect_flood_members)
 # ---------------------------------------------------------------------------
 
-def _detect_flood_members_for_lead(
+def _detect_flood_patches_for_lead(
     grbs,
     grib_index: dict,
     lead_window,
@@ -340,8 +345,16 @@ def _detect_flood_members_for_lead(
     a_min_km2: float,
     connectivity: int,
     init_dt,
-) -> List[int]:
-    """Phase 1: return list of member IDs that trigger the flood detection rule."""
+    support_lat_vals,
+    support_lon_vals,
+) -> Tuple[List[int], Dict[int, List[Dict[str, Any]]]]:
+    """Phase 1: detect flood members and record qualifying event patches.
+
+    Returns
+    -------
+    (flood_members, patches_by_member)
+        patches_by_member[member] = list of patch dicts with valid_date and bbox.
+    """
     import numpy as np
     from scipy.ndimage import label, generate_binary_structure
 
@@ -357,14 +370,15 @@ def _detect_flood_members_for_lead(
 
     struct = generate_binary_structure(2, connectivity)
     flood_members: List[int] = []
+    patches_by_member: Dict[int, List[Dict[str, Any]]] = {}
 
     for member in grib_index["members"]:
-        triggered = False
+        member_patches: List[Dict[str, Any]] = []
         for vdate in lead_window:
             q_vals = _read_grib_snapshot(
                 grbs, grib_index["msg_index"], grib_index["vt_lookup"],
                 vdate, member, init_dt, cell_lat_idx, cell_lon_idx,
-            )
+            ) * 1000  # TODO: *1000 multipler to mock for trigger case. To remove when operating
             if q_vals is None:
                 continue
             rp = discharge_to_return_period(
@@ -385,12 +399,177 @@ def _detect_flood_members_for_lead(
             if nlab == 0:
                 continue
             areas = np.bincount(labs.ravel(), weights=area_grid_km2.ravel())
-            if len(areas) > 1 and np.max(areas[1:]) >= a_min_km2:
-                triggered = True
-                break
-        if triggered:
+            if len(areas) <= 1:
+                continue
+            for lab_id in range(1, len(areas)):
+                if areas[lab_id] < a_min_km2:
+                    continue
+                patch_mask = labs == lab_id
+                pos = np.argwhere(patch_mask)
+                if pos.size == 0:
+                    continue
+
+                lat_idx = pos[:, 0]
+                lon_idx = pos[:, 1]
+                lat_min = float(np.min(support_lat_vals[lat_idx]))
+                lat_max = float(np.max(support_lat_vals[lat_idx]))
+                lon_min = float(np.min(support_lon_vals[lon_idx]))
+                lon_max = float(np.max(support_lon_vals[lon_idx]))
+
+                member_patches.append(
+                    {
+                        "valid_date": vdate,
+                        "area_km2": float(areas[lab_id]),
+                        "bbox": (lon_min, lat_min, lon_max, lat_max),
+                    }
+                )
+
+        if member_patches:
             flood_members.append(member)
-    return flood_members
+            patches_by_member[member] = member_patches
+    return flood_members, patches_by_member
+
+
+def _render_depth_raster_for_patch(
+    discharge_per_cell,
+    evt_params,
+    spatial: dict,
+    bbox: Tuple[float, float, float, float],
+    patch_bbox: Tuple[float, float, float, float],
+    out_tif: Path,
+) -> bool:
+    """Build and write an event depth raster clipped to one detected patch bbox."""
+    import numpy as np
+    import pandas as pd
+    import rasterio
+    import xarray as xr
+    from shapely.geometry import box as sbox
+
+    ep = evt_params.set_index("cell_id")
+    cells = [c for c in discharge_per_cell.index if c in ep.index]
+    if not cells:
+        return False
+
+    q = discharge_per_cell[cells].fillna(0.0).values[None, :]
+    rp_vals = discharge_to_return_period(
+        q,
+        ep.loc[cells, "u"].values[None, :],
+        ep.loc[cells, "sigma"].values[None, :],
+        ep.loc[cells, "xi"].values[None, :],
+        ep.loc[cells, "lam"].values[None, :],
+    ).ravel()
+    if np.nanmax(rp_vals) < 2.0:
+        return False
+
+    rp_df = pd.DataFrame(
+        {
+            "lat": ep.loc[cells, "lat"].values,
+            "lon": ep.loc[cells, "lon"].values,
+            "rp": rp_vals,
+        }
+    )
+    lat_vals = np.sort(rp_df["lat"].unique())
+    lon_vals = np.sort(rp_df["lon"].unique())
+    grid = np.full((len(lat_vals), len(lon_vals)), np.nan, dtype="float32")
+    lat_idx = {v: i for i, v in enumerate(lat_vals)}
+    lon_idx = {v: j for j, v in enumerate(lon_vals)}
+    for _, row in rp_df.iterrows():
+        grid[lat_idx[row["lat"]], lon_idx[row["lon"]]] = row["rp"]
+    _ = xr.DataArray(
+        grid,
+        coords={"latitude": lat_vals, "longitude": lon_vals},
+        dims=("latitude", "longitude"),
+        name="rp",
+    )
+
+    rp_to_files = spatial["rp_to_files"]
+    minx, miny, maxx, maxy = bbox
+    bbox_geom = sbox(minx, miny, maxx, maxy)
+    available_rps = sorted(rp for rp in rp_to_files if rp_to_files[rp])
+    if not available_rps:
+        return False
+
+    from rasterio.merge import merge
+
+    depth_arrays: Dict[int, np.ndarray] = {}
+    ref_transform = None
+    ref_crs = None
+    ref_shape: Optional[Tuple[int, int]] = None
+    for rp in available_rps:
+        tif_paths = [p for p in rp_to_files[rp] if sbox(*rasterio.open(p).bounds).intersects(bbox_geom)]
+        if not tif_paths:
+            tif_paths = rp_to_files[rp]
+        try:
+            with ExitStack() as stack:
+                srcs = [stack.enter_context(rasterio.open(p)) for p in tif_paths]
+                mosaic, trans = merge(srcs, bounds=(minx, miny, maxx, maxy))
+            arr = mosaic[0].astype(np.float32)
+            nodata = rasterio.open(tif_paths[0]).nodata
+            if nodata is not None:
+                arr[arr == nodata] = np.nan
+            if ref_transform is None:
+                ref_transform = trans
+                ref_shape = arr.shape
+                with rasterio.open(tif_paths[0]) as src_ref:
+                    ref_crs = src_ref.crs
+            depth_arrays[rp] = arr
+        except Exception as exc:
+            logger.debug("JRC load error RP%d: %s", rp, exc)
+
+    if not depth_arrays or ref_shape is None or ref_transform is None:
+        return False
+
+    rps_sorted = sorted(depth_arrays)
+    event_rp = float(np.nanmax(rp_vals))
+    if event_rp <= rps_sorted[0]:
+        depth_np = depth_arrays[rps_sorted[0]].copy()
+    elif event_rp >= rps_sorted[-1]:
+        depth_np = depth_arrays[rps_sorted[-1]].copy()
+    else:
+        lo = max(r for r in rps_sorted if r <= event_rp)
+        hi = min(r for r in rps_sorted if r >= event_rp)
+        if lo == hi:
+            depth_np = depth_arrays[lo].copy()
+        else:
+            t = (np.log(event_rp) - np.log(lo)) / (np.log(hi) - np.log(lo))
+            d_lo = np.nan_to_num(depth_arrays[lo], nan=0.0)
+            d_hi = np.nan_to_num(depth_arrays[hi], nan=0.0)
+            depth_np = ((1 - t) * d_lo + t * d_hi).astype(np.float32)
+
+    h, w = ref_shape
+    px_x = float(ref_transform.a)
+    px_y = float(ref_transform.e)
+    x0 = float(ref_transform.c)
+    y0 = float(ref_transform.f)
+    lon_centers = x0 + (np.arange(w) + 0.5) * px_x
+    lat_centers = y0 + (np.arange(h) + 0.5) * px_y
+
+    p_minx, p_miny, p_maxx, p_maxy = patch_bbox
+    keep_x = (lon_centers >= p_minx) & (lon_centers <= p_maxx)
+    keep_y = (lat_centers >= p_miny) & (lat_centers <= p_maxy)
+    keep_mask = np.outer(keep_y, keep_x)
+    depth_np = np.where(keep_mask, depth_np, np.nan)
+
+    if not np.isfinite(depth_np).any():
+        return False
+
+    out_tif.parent.mkdir(parents=True, exist_ok=True)
+    nodata_val = np.float32(-9999.0)
+    write_arr = np.where(np.isfinite(depth_np), depth_np, nodata_val).astype(np.float32)
+    with rasterio.open(
+        out_tif,
+        "w",
+        driver="GTiff",
+        height=h,
+        width=w,
+        count=1,
+        dtype="float32",
+        crs=ref_crs,
+        transform=ref_transform,
+        nodata=nodata_val,
+    ) as dst:
+        dst.write(write_arr, 1)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -485,197 +664,6 @@ def _load_spatial_resources(settings: "DetectionSettings") -> dict:
         "name_col": name_col,
     }
 
-
-# ---------------------------------------------------------------------------
-# Impact pipeline for one discharge snapshot  (NB07 run_full_impact_pipeline)
-# ---------------------------------------------------------------------------
-
-def _compute_impact_snapshot(
-    discharge_per_cell,
-    evt_params,
-    spatial: dict,
-    flood_detect_rps: List[int],
-    depth_threshold_m: float,
-    bbox: Tuple[float, float, float, float],
-    event_id: str = "detect",
-) -> Dict[str, float]:
-    """Return {unit_name: people_affected} for one member × valid_date snapshot."""
-    import numpy as np
-    import pandas as pd
-    import xarray as xr
-    import rasterio
-    from rasterio.merge import merge
-    from shapely.geometry import box as sbox
-
-    ep = evt_params.set_index("cell_id")
-    cells = [c for c in discharge_per_cell.index if c in ep.index]
-    if not cells:
-        return {}
-
-    q = discharge_per_cell[cells].fillna(0.0).values[None, :]
-    rp_vals = discharge_to_return_period(
-        q,
-        ep.loc[cells, "u"].values[None, :],
-        ep.loc[cells, "sigma"].values[None, :],
-        ep.loc[cells, "xi"].values[None, :],
-        ep.loc[cells, "lam"].values[None, :],
-    ).ravel()
-
-    # Early exit: skip JRC regriddding if no cell reaches RP >= 2yr
-    if np.nanmax(rp_vals) < 2.0:
-        result: Dict[str, float] = {}
-        for aid, aname in spatial["admin_id_to_name"].items():
-            result[f"ADM3::{aname}"] = 0.0
-        result["WATERSHED::TOTAL"] = 0.0
-        return result
-
-    # Build 2-D RP grid
-    rp_df = pd.DataFrame({
-        "lat": ep.loc[cells, "lat"].values,
-        "lon": ep.loc[cells, "lon"].values,
-        "rp": rp_vals,
-    })
-    lat_vals = np.sort(rp_df["lat"].unique())
-    lon_vals = np.sort(rp_df["lon"].unique())
-    grid = np.full((len(lat_vals), len(lon_vals)), np.nan, dtype="float32")
-    lat_idx = {v: i for i, v in enumerate(lat_vals)}
-    lon_idx = {v: j for j, v in enumerate(lon_vals)}
-    for _, row in rp_df.iterrows():
-        grid[lat_idx[row["lat"]], lon_idx[row["lon"]]] = row["rp"]
-
-    rp_grid_da = xr.DataArray(
-        grid,
-        coords={"latitude": lat_vals, "longitude": lon_vals},
-        dims=("latitude", "longitude"),
-        name="rp",
-    )
-
-    # Interpolate JRC depth maps at grid RPs
-    rp_to_files = spatial["rp_to_files"]
-    minx, miny, maxx, maxy = bbox
-    bbox_geom = sbox(minx, miny, maxx, maxy)
-
-    available_rps = sorted(rp for rp in rp_to_files if rp_to_files[rp])
-    if not available_rps:
-        return {}
-
-    # Load JRC tiles for each RP within bbox
-    depth_arrays: Dict[int, np.ndarray] = {}
-    ref_transform = None
-    ref_shape: Optional[Tuple[int, int]] = None
-    for rp in available_rps:
-        tif_paths = [p for p in rp_to_files[rp]
-                     if sbox(*rasterio.open(p).bounds).intersects(bbox_geom)]
-        if not tif_paths:
-            tif_paths = rp_to_files[rp]
-        try:
-            with ExitStack() as stack:
-                srcs = [stack.enter_context(rasterio.open(p)) for p in tif_paths]
-                mosaic, trans = merge(srcs, bounds=(minx, miny, maxx, maxy))
-            arr = mosaic[0].astype(np.float32)
-            nodata = rasterio.open(tif_paths[0]).nodata
-            if nodata is not None:
-                arr[arr == nodata] = np.nan
-            if ref_transform is None:
-                ref_transform = trans
-                ref_shape = arr.shape
-            depth_arrays[rp] = arr
-        except Exception as exc:
-            logger.debug("JRC load error RP%d: %s", rp, exc)
-
-    if not depth_arrays:
-        return {}
-
-    h, w = ref_shape  # type: ignore[misc]
-    # Interpolate depth at event RP using log-linear interpolation between available RPs
-    rps_sorted = sorted(depth_arrays)
-    event_rp = float(np.nanmax(rp_vals))
-    if event_rp <= rps_sorted[0]:
-        depth_np = depth_arrays[rps_sorted[0]].copy()
-    elif event_rp >= rps_sorted[-1]:
-        depth_np = depth_arrays[rps_sorted[-1]].copy()
-    else:
-        lo = max(r for r in rps_sorted if r <= event_rp)
-        hi = min(r for r in rps_sorted if r >= event_rp)
-        if lo == hi:
-            depth_np = depth_arrays[lo].copy()
-        else:
-            t = (np.log(event_rp) - np.log(lo)) / (np.log(hi) - np.log(lo))
-            d_lo = np.nan_to_num(depth_arrays[lo], nan=0.0)
-            d_hi = np.nan_to_num(depth_arrays[hi], nan=0.0)
-            depth_np = ((1 - t) * d_lo + t * d_hi).astype(np.float32)
-
-    # Reproject WorldPop and admin rasters to depth grid if needed
-    pop_grid = spatial["pop_grid"]
-    admin_id_raster = spatial["admin_id_raster"]
-    admin_id_to_name = spatial["admin_id_to_name"]
-
-    # Use rasterio to reproject to depth grid bounds/resolution
-    from rasterio.transform import from_bounds as _from_bounds
-    from rasterio.warp import reproject as _reproject, Resampling
-
-    depth_transform = ref_transform
-    with rasterio.open(
-        list(rp_to_files[available_rps[0]])[0]
-    ) as _src_ref:
-        src_crs = _src_ref.crs
-        src_transform_wp = _src_ref.transform  # approximate, WorldPop may differ
-
-    import rasterio
-    from rasterio.crs import CRS as _CRS
-
-    _epsg4326 = _CRS.from_epsg(4326)
-
-    # Reproject pop grid to depth extent
-    pop_reproj = np.zeros((h, w), dtype=np.float32)
-    with rasterio.open(spatial.get("worldpop_tif", "")) if spatial.get("worldpop_tif") else \
-            rasterio.MemoryFile() as _wp:
-        pass  # fallback: we already have pop_grid in memory; use nearest reproject
-
-    # Simplified approach: slice pop/admin to the bbox pixel region
-    # (works when pop and JRC grids share EPSG:4326 with similar resolution)
-    flooded = np.isfinite(depth_np) & (depth_np >= depth_threshold_m)
-    if not flooded.any():
-        result = {f"ADM3::{n}": 0.0 for n in admin_id_to_name.values()}
-        result["WATERSHED::TOTAL"] = 0.0
-        return result
-
-    # Aggregate affected population per admin unit
-    # Since pop_grid and admin rasters may have different resolutions,
-    # we use the admin_id_raster shape and scale indices.
-    ph, pw = pop_grid.shape
-    ah, aw = admin_id_raster.shape
-    # Map depth grid pixels to pop/admin grid pixels via bbox fractions
-    flooded_flat = flooded.ravel()
-    if ah == h and aw == w:
-        admin_flat = admin_id_raster.ravel()
-        pop_flat = pop_grid.ravel()
-    else:
-        # Nearest-neighbour resample admin and pop to depth grid size
-        from scipy.ndimage import zoom
-        zy = h / ah
-        zx = w / aw
-        admin_resampled = zoom(admin_id_raster.astype(float), (h / ah, w / aw), order=0).astype("int32")
-        pop_resampled = zoom(np.nan_to_num(pop_grid, nan=0.0), (h / ph, w / pw), order=1).astype("float32")
-        admin_flat = admin_resampled.ravel()
-        pop_flat = pop_resampled.ravel()
-
-    pop_flat = np.nan_to_num(np.asarray(pop_flat, float), nan=0.0)
-    pop_flat = np.clip(pop_flat, 0.0, None)
-
-    impact: Dict[int, float] = {}
-    valid_mask = flooded_flat & (admin_flat > 0)
-    for aid in admin_id_to_name:
-        cell_mask = valid_mask & (admin_flat == aid)
-        impact[aid] = float(pop_flat[cell_mask].sum())
-
-    result = {}
-    for aid, aname in admin_id_to_name.items():
-        result[f"ADM3::{aname}"] = impact.get(aid, 0.0)
-    result["WATERSHED::TOTAL"] = sum(impact.values())
-    return result
-
-
 # ---------------------------------------------------------------------------
 # Main public function
 # ---------------------------------------------------------------------------
@@ -740,7 +728,7 @@ def detect_flood_events(
         "lambda_events_per_year": "lam",
         "gpd_xi": "xi",
         "gpd_sigma": "sigma",
-        "gpd_scale_sigma": "sigma",
+        "gpd_scale_sigma": "sigma", #TODO: check duplicate sigma origin
     }
     evt_params = evt_raw.rename(
         columns={k: v for k, v in _col_map.items() if k in evt_raw.columns}
@@ -761,7 +749,7 @@ def detect_flood_events(
     logger.info("EVT1 params loaded: %d cells for basin '%s'", len(basin_cells), basin_id)
 
     # --- Build support grid --------------------------------------------------
-    lat_vals, lon_vals, grid_index, area_grid, lat1d, lon1d = _build_support_grid(evt_params)
+    lat_vals, lon_vals, grid_index, area_grid, _, _ = _build_support_grid(evt_params)
 
     # --- Load spatial resources ----------------------------------------------
     spatial = _load_spatial_resources(settings)
@@ -811,92 +799,112 @@ def detect_flood_events(
     impact_cube: ImpactCube = {}
 
     # --- Main loop: per lead time -------------------------------------------
-    for lead_days in lead_days_list:
-        lead_window = pd.date_range(
-            init_dt + pd.Timedelta(days=1),
-            init_dt + pd.Timedelta(days=lead_days),
-            freq="D",
-        )
+    with tempfile.TemporaryDirectory(prefix=f"step3_patch_{basin_id}_") as patch_dir:
+        patch_dir_path = Path(patch_dir)
+        for lead_days in lead_days_list[:3]:  # loop only 3 first lead times for faster run. TODO: remove slice to run all leads
+            lead_window = pd.date_range(
+                init_dt + pd.Timedelta(days=1),
+                init_dt + pd.Timedelta(days=lead_days),
+                freq="D",
+            )
 
-        # Phase 1: detect flood members via connected-component rule
-        flood_members = _detect_flood_members_for_lead(
-            grbs=forecast_src,
-            grib_index=grib_index,
-            lead_window=lead_window,
-            basin_cells=basin_cells,
-            evt_params=evt_params,
-            grid_index=grid_index,
-            area_grid_km2=area_grid,
-            cell_lat_idx=cell_lat_idx,
-            cell_lon_idx=cell_lon_idx,
-            t0_years=settings.t0_years,
-            a_min_km2=settings.a_min_km2,
-            connectivity=settings.cc_connectivity,
-            init_dt=init_dt,
-        )
-        logger.info(
-            "Lead %2dd: %d/%d flood members detected",
-            lead_days, len(flood_members), len(all_members),
-        )
+            # Phase 1: detect flood members and event patches via connected components
+            flood_members, patches_by_member = _detect_flood_patches_for_lead(
+                grbs=forecast_src,
+                grib_index=grib_index,
+                lead_window=lead_window,
+                basin_cells=basin_cells,
+                evt_params=evt_params,
+                grid_index=grid_index,
+                area_grid_km2=area_grid,
+                cell_lat_idx=cell_lat_idx,
+                cell_lon_idx=cell_lon_idx,
+                t0_years=settings.t0_years,
+                a_min_km2=settings.a_min_km2,
+                connectivity=settings.cc_connectivity,
+                init_dt=init_dt,
+                support_lat_vals=lat_vals,
+                support_lon_vals=lon_vals,
+            )
 
-        if not flood_members:
-            # Fill cube with zeros for this lead (all members, all units, all RPs)
+            n_patches = sum(len(v) for v in patches_by_member.values())
+            logger.info(
+                f"Lead {lead_days:2d}d: "
+                f"{len(flood_members)}/{len(all_members)} flood members, "
+                f"{n_patches} qualifying patches"
+            )
+
+            lead_patch_inputs: List[EventPatchImpactInput] = []
+            for member in flood_members:
+                for patch_idx, patch_meta in enumerate(patches_by_member.get(member, []), start=1):
+                    vdate = patch_meta["valid_date"]
+                    q_vals = _read_grib_snapshot(
+                        forecast_src,
+                        grib_index["msg_index"],
+                        grib_index["vt_lookup"],
+                        vdate,
+                        member,
+                        init_dt,
+                        cell_lat_idx,
+                        cell_lon_idx,
+                    ) * 1000  # TODO: *1000 multipler to mock for trigger case. To remove when operating
+                    if q_vals is None:
+                        continue
+
+                    q_snapshot = pd.Series(q_vals, index=basin_cells)
+                    depth_raster = patch_dir_path / (
+                        f"{basin_id}_lead{lead_days:02d}_m{member:03d}_patch{patch_idx:03d}.tif"
+                    )
+                    ok = _render_depth_raster_for_patch(
+                        discharge_per_cell=q_snapshot,
+                        evt_params=evt_params,
+                        spatial=spatial,
+                        bbox=bbox,
+                        patch_bbox=patch_meta["bbox"],
+                        out_tif=depth_raster,
+                    )
+                    if not ok:
+                        continue
+
+                    patch_event_id = (
+                        f"{basin_id}_lead{lead_days:02d}_m{member:03d}_patch{patch_idx:03d}"
+                    )
+                    for rp in settings.flood_detect_rps:
+                        lead_patch_inputs.append(
+                            EventPatchImpactInput(
+                                lead_day=lead_days,
+                                member_id=member,
+                                rp=int(rp),
+                                depth_raster=depth_raster,
+                                event_id=f"{patch_event_id}_rp{int(rp)}",
+                            )
+                        )
+
+            if lead_patch_inputs:
+                _, _, lead_cube = compute_impacts_from_event_patches(
+                    patches=lead_patch_inputs,
+                    worldpop_tif=Path(settings.worldpop_tif),
+                    depth_threshold_m=settings.depth_threshold_m,
+                )
+
+                for unit, by_lead in lead_cube.items():
+                    for lead, by_member in by_lead.items():
+                        for member, by_rp in by_member.items():
+                            dst_rp = (
+                                impact_cube
+                                .setdefault(unit, {})
+                                .setdefault(lead, {})
+                                .setdefault(member, {})
+                            )
+                            for rp, val in by_rp.items():
+                                dst_rp[int(rp)] = dst_rp.get(int(rp), 0.0) + float(val)
+
+            # Ensure full cube coverage (all unit/member/rp combinations) for this lead.
             for member in all_members:
                 for unit in unit_names:
-                    rp_dict = {rp: 0.0 for rp in settings.flood_detect_rps}
-                    impact_cube.setdefault(unit, {}).setdefault(lead_days, {})[member] = rp_dict
-            continue
-
-        # Phase 2: full impact pipeline for flood members only
-        for member in flood_members:
-            q_snapshot: Optional[pd.Series] = None
-            # Use the last (peak) valid date in the lead window for impact
-            for vdate in reversed(lead_window):
-                q_vals = _read_grib_snapshot(
-                    forecast_src,
-                    grib_index["msg_index"],
-                    grib_index["vt_lookup"],
-                    vdate, member, init_dt, cell_lat_idx, cell_lon_idx,
-                )
-                if q_vals is not None:
-                    q_snapshot = pd.Series(q_vals, index=basin_cells)
-                    break
-
-            if q_snapshot is None:
-                rp_dict = {rp: 0.0 for rp in settings.flood_detect_rps}
-                for unit in unit_names:
-                    impact_cube.setdefault(unit, {}).setdefault(lead_days, {})[member] = rp_dict
-                continue
-
-            # Compute impact at each RP
-            rp_dict_by_unit: Dict[str, Dict[int, float]] = {}
-            for rp in settings.flood_detect_rps:
-                snap_impact = _compute_impact_snapshot(
-                    discharge_per_cell=q_snapshot,
-                    evt_params=evt_params,
-                    spatial=spatial,
-                    flood_detect_rps=[rp],
-                    depth_threshold_m=settings.depth_threshold_m,
-                    bbox=bbox,
-                    event_id=f"{basin_id}_lead{lead_days:02d}_mbr{member:03d}_rp{rp}",
-                )
-                for unit, pop in snap_impact.items():
-                    rp_dict_by_unit.setdefault(unit, {})[rp] = pop
-
-            # Fill zero-impact members
-            for unit in unit_names:
-                cube_rp = rp_dict_by_unit.get(unit, {})
-                full_rp = {rp: cube_rp.get(rp, 0.0) for rp in settings.flood_detect_rps}
-                impact_cube.setdefault(unit, {}).setdefault(lead_days, {})[member] = full_rp
-
-        # Non-flood members get zero impact
-        for member in all_members:
-            if member not in flood_members:
-                rp_dict = {rp: 0.0 for rp in settings.flood_detect_rps}
-                for unit in unit_names:
-                    impact_cube.setdefault(unit, {}).setdefault(lead_days, {}).setdefault(
-                        member, rp_dict
-                    )
+                    dst_rp = impact_cube.setdefault(unit, {}).setdefault(lead_days, {}).setdefault(member, {})
+                    for rp in settings.flood_detect_rps:
+                        dst_rp.setdefault(int(rp), 0.0)
 
     if isinstance(forecast_src, dict) and forecast_src.get("kind") == "netcdf":
         forecast_src["ds"].close()

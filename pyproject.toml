@@ -48,7 +48,7 @@ dev = [
 ]
 
 [project.scripts]
-flood-ops-daily = "flood_ops.cli:main"
+flood-monitoring = "flood_ops.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

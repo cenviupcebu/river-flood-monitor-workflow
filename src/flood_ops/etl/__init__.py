@@ -2,7 +2,8 @@
 
 Module layout
 -------------
-step0_input_evaluation.py Orchestration entry points for daily ETL runs.
+pipeline.py               Orchestration entry points for daily ETL runs.
+step0_input_evaluation.py Backward-compatible imports for orchestration.
 utils.py                  Shared dataclasses and path-template helper.
 run_spec.py               PipelineRunSpec settings dataclasses and YAML loader.
 step1_ingest.py           Resolve or download the GloFAS ensemble forecast file.
@@ -19,11 +20,10 @@ Public API
 """
 
 from .run_spec import PipelineRunSpec, load_run_spec
-from .step0_input_evaluation import evaluate_trigger_for_basin, run_daily_monitoring_etl
+from .pipeline import run_daily_monitoring_etl
 from .utils import BasinRunOutput, UnitDecision
 
 __all__ = [
-    "evaluate_trigger_for_basin",
     "run_daily_monitoring_etl",
     "load_run_spec",
     "PipelineRunSpec",

@@ -1,4 +1,4 @@
-"""CLI entry point for flood-ops (console script: ``flood-ops-daily``)."""
+"""CLI entry point for flood-ops (console script: ``flood-monitoring``)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from datetime import date
 import sys
 from typing import List
 
-from flood_ops.etl.step0_input_evaluation import run_daily_monitoring_etl
+from flood_ops.etl.pipeline import run_daily_monitoring_etl
 from flood_ops.logging import get_logger
 
 logger = get_logger(__name__)
