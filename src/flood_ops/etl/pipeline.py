@@ -12,98 +12,14 @@ from typing import Any, Dict, List, Tuple
 from flood_ops.config import load_basin_config
 from flood_ops.logging import get_logger, setup_pipeline_file_log
 
-from .run_spec import PipelineRunSpec, load_run_spec
+from .run_spec import load_run_spec
 from .prepare import prepare
 from .extract import extract
-from .step2_detect import detect_flood_events
-from .step4_evaluate import compute_prob_exceed
-from .step5_decide import apply_tier_rules
-from .step6_output import write_outputs
-from .utils import BasinRunOutput, UnitDecision, expand_template
+from .forecast import forecast
+from .save import save
+from .utils import BasinRunOutput, expand_template
 
 logger = get_logger(__name__)
-
-
-# def forecast(
-#     extracted: Dict[str, Any],
-#     issue_date: date,
-#     run_spec: PipelineRunSpec,
-# ) -> Dict[str, Any]:
-#     """Run flood detection, exceedance, and alert rule evaluation."""
-#     basin_id = str(extracted["basin_id"])
-#     logger.info("Starting evaluation — basin='%s', issue_date=%s", basin_id, issue_date)
-
-#     impact_cube, members, _ = detect_flood_events(
-#         forecast_path=str(extracted["forecast_path"]),
-#         evt_params_path=extracted["evt_parquet"],
-#         oep_json_path=extracted["oep_path"],
-#         issue_date=issue_date,
-#         basin_id=basin_id,
-#         settings=extracted["det"],
-#     )
-#     impacts_source = f"step2_detect:{extracted['forecast_path']}"
-#     logger.info("Detection mode complete — impact cube has %d units", len(impact_cube))
-
-#     prob_exceed = compute_prob_exceed(impact_cube, extracted["thresholds"], members)
-#     units: List[UnitDecision] = apply_tier_rules(
-#         prob_exceed,
-#         extracted["thresholds"],
-#         run_spec.decision,
-#     )
-
-#     logger.info(
-#         "Evaluation complete — basin='%s', %d units evaluated",
-#         basin_id,
-#         len(units),
-#     )
-#     return {
-#         "basin_id": basin_id,
-#         "forecast_path": extracted["forecast_path"],
-#         "oep_path": extracted["oep_path"],
-#         "units": units,
-#         "impacts_source": impacts_source,
-#     }
-
-
-def save(
-    run_spec: PipelineRunSpec,
-    issue_date: date,
-    basin_forecasts: List[Dict[str, Any]],
-) -> Tuple[List[BasinRunOutput], Path]:
-    """Format basin outputs and persist final trigger files."""
-    basin_results: List[BasinRunOutput] = []
-    for basin in basin_forecasts:
-        metadata = {
-            "rule_tiers": [
-                {
-                    "name": r.name,
-                    "rp": r.rp,
-                    "p_thr": r.p_thr,
-                    "n_req": r.n_req,
-                    "label": r.label,
-                }
-                for r in run_spec.decision.rules
-            ],
-            "persist_days": run_spec.decision.persist_days,
-            "min_lead": run_spec.decision.min_lead,
-            "oep_min": run_spec.decision.oep_min,
-            "oep_source": str(basin["oep_path"]),
-            "impacts_source": basin["impacts_source"],
-            "detection_mode": "step2_detect",
-        }
-
-        basin_results.append(
-            BasinRunOutput(
-                basin_id=str(basin["basin_id"]),
-                issue_date=issue_date.isoformat(),
-                forecast_path=str(basin["forecast_path"]),
-                units=basin["units"],
-                metadata=metadata,
-            )
-        )
-
-    output_file = write_outputs(run_spec, issue_date, basin_results)
-    return basin_results, output_file
 
 
 def run_daily_monitoring_etl(

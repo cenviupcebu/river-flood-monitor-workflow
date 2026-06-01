@@ -1,4 +1,3 @@
-"""Step 6 — Output: serialise trigger decisions for downstream systems."""
 
 from __future__ import annotations
 
@@ -6,13 +5,19 @@ import csv
 import json
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from flood_ops.logging import get_logger
 from .run_spec import PipelineRunSpec
 from .utils import BasinRunOutput, expand_template
 
 logger = get_logger(__name__)
+
+
+"""
+Step 6 — Output: serialise trigger decisions for downstream systems.
+"""
+
 
 _CSV_FIELDS = [
     "issue_date",
@@ -26,6 +31,47 @@ _CSV_FIELDS = [
     "probability_at_fire",
     "impact_threshold_people",
 ]
+
+
+def save(
+    run_spec: PipelineRunSpec,
+    issue_date: date,
+    basin_forecasts: List[Dict[str, Any]],
+) -> Tuple[List[BasinRunOutput], Path]:
+    """Format basin outputs and persist final trigger files."""
+    basin_results: List[BasinRunOutput] = []
+    for basin in basin_forecasts:
+        metadata = {
+            "rule_tiers": [
+                {
+                    "name": r.name,
+                    "rp": r.rp,
+                    "p_thr": r.p_thr,
+                    "n_req": r.n_req,
+                    "label": r.label,
+                }
+                for r in run_spec.decision.rules
+            ],
+            "persist_days": run_spec.decision.persist_days,
+            "min_lead": run_spec.decision.min_lead,
+            "oep_min": run_spec.decision.oep_min,
+            "oep_source": str(basin["oep_path"]),
+            "impacts_source": basin["impacts_source"],
+            "detection_mode": "step2_detect",
+        }
+
+        basin_results.append(
+            BasinRunOutput(
+                basin_id=str(basin["basin_id"]),
+                issue_date=issue_date.isoformat(),
+                forecast_path=str(basin["forecast_path"]),
+                units=basin["units"],
+                metadata=metadata,
+            )
+        )
+
+    output_file = _write_outputs(run_spec, issue_date, basin_results)
+    return basin_results, output_file
 
 
 def _serialise_basin(result: BasinRunOutput) -> Dict[str, Any]:
@@ -55,7 +101,7 @@ def _serialise_basin(result: BasinRunOutput) -> Dict[str, Any]:
     }
 
 
-def write_outputs(
+def _write_outputs(
     run_spec: PipelineRunSpec,
     issue_date: date,
     basin_results: List[BasinRunOutput],
