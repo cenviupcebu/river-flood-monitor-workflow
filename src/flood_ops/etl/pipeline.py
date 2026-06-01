@@ -13,66 +13,15 @@ from flood_ops.config import load_basin_config
 from flood_ops.logging import get_logger, setup_pipeline_file_log
 
 from .run_spec import PipelineRunSpec, load_run_spec
-from .step1_ingest import resolve_forecast_path
+from .prepare import prepare
+from .extract import extract
 from .step2_detect import detect_flood_events
-from .step4_evaluate import compute_prob_exceed, load_oep_thresholds
+from .step4_evaluate import compute_prob_exceed
 from .step5_decide import apply_tier_rules
 from .step6_output import write_outputs
 from .utils import BasinRunOutput, UnitDecision, expand_template
 
 logger = get_logger(__name__)
-
-
-def prepare(
-    cfg_path: str,
-    issue_date: date,
-    run_spec: PipelineRunSpec,
-) -> Dict[str, Any]:
-    """Prepare basin inputs required for the forecast step."""
-    cfg = load_basin_config(cfg_path)
-    basin_id = cfg.basin_id
-    logger.info("Processing basin '%s' from %s", basin_id, cfg_path)
-
-    if run_spec.inputs is None:
-        raise ValueError("Run spec must define inputs.oep_json")
-
-    forecast_path = resolve_forecast_path(run_spec, issue_date, basin_id)
-    oep_path = Path(expand_template(run_spec.inputs.oep_json, issue_date, basin_id))
-    thresholds = load_oep_thresholds(oep_path, run_spec.decision.oep_min)
-
-    return {
-        "basin_id": basin_id,
-        "forecast_path": forecast_path,
-        "oep_path": oep_path,
-        "thresholds": thresholds,
-    }
-
-
-def extract(
-    prepared: Dict[str, Any],
-    issue_date: date,
-    run_spec: PipelineRunSpec,
-) -> Dict[str, Any]:
-    """Extract detection inputs derived from prepared basin context."""
-    basin_id = str(prepared["basin_id"])
-    forecast_path = prepared["forecast_path"]
-    if not forecast_path:
-        raise FileNotFoundError(
-            f"Forecast file not available for basin '{basin_id}' on {issue_date}. "
-            "Either supply a forecast file via ingest settings or set "
-            "inputs.precomputed_impacts_template for prototype mode."
-        )
-
-    det = run_spec.detection
-    evt_parquet = Path(expand_template(det.evt_params_parquet, issue_date, basin_id))
-    return {
-        "basin_id": basin_id,
-        "forecast_path": forecast_path,
-        "oep_path": prepared["oep_path"],
-        "thresholds": prepared["thresholds"],
-        "evt_parquet": evt_parquet,
-        "det": det,
-    }
 
 
 def forecast(
@@ -186,11 +135,19 @@ def run_daily_monitoring_etl(
         log_file,
     )
 
+    # Download forecast from GloFAS
+    prepare()
+
     basin_forecasts: List[Dict[str, Any]] = []
     for cfg_path in basin_config_files:
-        prepared = prepare(cfg_path, issue_date, run_spec)
-        extracted = extract(prepared, issue_date, run_spec)
-        basin_forecasts.append(forecast(extracted, issue_date, run_spec))
+        cfg = load_basin_config(cfg_path)
+        extracted = extract(
+            config=cfg,
+            issue_date=issue_date,
+            run_spec=run_spec,
+        )
+        forecasted = forecast(extracted, issue_date, run_spec)
+        basin_forecasts.append(forecasted)
 
     basin_results, output_file = save(run_spec, issue_date, basin_forecasts)
 
@@ -208,7 +165,6 @@ def run_daily_monitoring_etl(
 
 __all__ = [
     "prepare",
-    "extract",
     "forecast",
     "save",
     "run_daily_monitoring_etl",

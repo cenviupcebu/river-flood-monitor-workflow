@@ -11,54 +11,6 @@ from flood_ops.logging import get_logger
 logger = get_logger(__name__)
 
 
-def load_oep_thresholds(
-    oep_json_path: Path,
-    oep_min: float,
-) -> Dict[str, Dict[int, float]]:
-    """Load per-unit OEP impact thresholds from the NB05 JSON.
-
-    Units whose RP2 threshold is below ``oep_min`` are excluded.
-
-    Returns
-    -------
-    dict
-        ``{unit_id: {rp: threshold_people}}``
-    """
-    logger.info(
-        "Loading OEP thresholds from %s (oep_min=%.0f)", oep_json_path, oep_min
-    )
-    if not oep_json_path.exists():
-        raise FileNotFoundError(f"OEP JSON not found: {oep_json_path}")
-
-    raw = json.loads(oep_json_path.read_text(encoding="utf-8"))
-    rp_report = [int(float(x)) for x in raw.get("rp_report", [])]
-
-    thresholds: Dict[str, Dict[int, float]] = {}
-    for rec in raw.get("units", []):
-        unit = rec.get("unit")
-        if not unit:
-            continue
-        oep_rl = rec.get("oep_rl", [])
-        rp_map: Dict[int, float] = {}
-        for idx, rp in enumerate(rp_report):
-            if idx >= len(oep_rl):
-                continue
-            try:
-                rp_map[rp] = float(oep_rl[idx])
-            except (TypeError, ValueError):
-                continue
-        if rp_map.get(2, 0.0) >= oep_min:
-            thresholds[str(unit)] = rp_map
-
-    logger.info(
-        "OEP thresholds loaded: %d qualifying units (from %d total, oep_min=%.0f)",
-        len(thresholds),
-        len(raw.get("units", [])),
-        oep_min,
-    )
-    return thresholds
-
-
 def compute_prob_exceed(
     cube: Dict[str, Dict[int, Dict[int, Dict[int, float]]]],
     thresholds: Dict[str, Dict[int, float]],
