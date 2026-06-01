@@ -24,7 +24,7 @@ def main(
         parser = argparse.ArgumentParser(
             description="Run daily ETL flood trigger for specified basins",
         )
-        parser.add_argument("--date", required=True, help="Issue date (YYYY-MM-DD)")
+        parser.add_argument("--date", required=True, default=date.today().isoformat(), help="Issue date (YYYY-MM-DD)")
         parser.add_argument(
             "--run-spec", required=True, help="Path to ETL run-spec YAML"
         )
