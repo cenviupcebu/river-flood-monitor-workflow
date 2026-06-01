@@ -15,11 +15,6 @@ inputs:
   # Step 4 — OEP thresholds produced by NB05.
   oep_json: "data/silver/risk_profiles/oep_curves_all_units.json"
 
-  # Prototype Step 2-3 bridge — one JSON file per basin/date exported from NB07
-  # or calibration/scripts/run_reforecast_month.py.
-  # Variables: {date}, {yyyy}, {mm}, {dd}, {basin_id}
-  precomputed_impacts_template: "data/silver/ops/impacts/{date}/{basin_id}_impacts.json"
-
 detection:
   # Return periods to compute in impact space (drives tier thresholds)
   flood_detect_rps: [2, 5, 10, 20]

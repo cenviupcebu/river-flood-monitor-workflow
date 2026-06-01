@@ -1,16 +1,6 @@
 # Prototype run-spec for the daily flood monitoring ETL.
 #
 # Copy this file to daily_monitoring_etl.yaml and fill in the real data paths.
-#
-# Detection modes
-# ---------------
-# Prototype mode  — set inputs.precomputed_impacts_template to a pre-built
-#   impact cube JSON (exported from NB07 or run_reforecast_month.py).
-#   No GRIB or spatial data required.
-#
-# Detection mode  — leave inputs.precomputed_impacts_template blank (or omit it)
-#   and fill in the detection.* paths.  The pipeline runs the full NB07
-#   spatial flood-detection algorithm against the live GloFAS GRIB.
 
 run_name: "daily_flood_monitoring_prototype"
 
