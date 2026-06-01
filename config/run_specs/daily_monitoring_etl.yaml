@@ -17,20 +17,13 @@ run_name: "daily_flood_monitoring_prototype"
 ingest:
   # Step 1 — path to the GloFAS ensemble GRIB for this issue date.
   # Variables available: {date}, {yyyymmdd}, {yyyy}, {mm}, {dd}, {basin_id}, {ens_no}
-  # TODO: add ens_no to forecast path template e.g. dis_{ens_no}_{yyyymmdd}00
-  forecast_path_template: "data/bronze/glofas/forecast/dis_00_{yyyymmdd}00.nc"
+  forecast_path_template: "data/bronze/glofas/forecast/dis_{ens_no}_{yyyymmdd}00.nc"
   download_if_missing: false
   downloader_command_template: null   # reserved for future CDS download hook
 
 inputs:
   # Step 4 — OEP thresholds produced by NB05.
   oep_json: "data/silver/risk_profiles/oep_curves_all_units.json"
-
-  # Prototype Step 2-3 bridge — one JSON file per basin/date exported from NB07
-  # or calibration/scripts/run_reforecast_month.py.
-  # Variables: {date}, {yyyymmdd}, {yyyy}, {mm}, {dd}, {basin_id}
-  # Leave blank (or remove) to use detection mode instead.
-  precomputed_impacts_template: 
 
 detection:
   # ── NB07 algorithm hyper-parameters ──────────────────────────────────────
@@ -46,6 +39,10 @@ detection:
   grib_shortname: "dis24"
   # Return periods to compute in impact space (drives tier thresholds)
   flood_detect_rps: [2, 5, 10, 20]
+  # Maximum return period used when converting discharge to RP
+  rp_cap: 500.0
+  # Expected number of ensemble members in the forecast files
+  total_ensemble_members: 51
 
   # ── Spatial data paths (required for detection mode) ─────────────────────
   # NB01 EVT calibration output (Parquet with GPD fits per GloFAS cell)
@@ -60,7 +57,8 @@ detection:
 decision:
   # Step 5 — activation rules (from NB07 Cell 14)
   persist_days: 2     # consecutive qualifying lead-days required
-  min_lead: 5         # earliest operational lead (days before predicted peak)
+  max_lead: 7         # latest operational lead
+  min_lead: 1         # earliest operational lead
   oep_min: 100        # exclude units with OEP_RP2 < 100 (no exposure model)
   rule_tiers:
     T1:

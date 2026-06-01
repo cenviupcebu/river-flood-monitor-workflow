@@ -20,6 +20,14 @@ inputs:
   # Variables: {date}, {yyyy}, {mm}, {dd}, {basin_id}
   precomputed_impacts_template: "data/silver/ops/impacts/{date}/{basin_id}_impacts.json"
 
+detection:
+  # Return periods to compute in impact space (drives tier thresholds)
+  flood_detect_rps: [2, 5, 10, 20]
+  # Maximum return period used when converting discharge to RP
+  rp_cap: 500.0
+  # Expected number of ensemble members in the forecast files
+  total_ensemble_members: 51
+
 decision:
   # Step 5 — activation rules (from NB07 Cell 14)
   persist_days: 2     # consecutive qualifying lead-days required
