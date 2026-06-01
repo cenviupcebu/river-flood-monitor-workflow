@@ -16,7 +16,13 @@ DEFAULT_RULE_TIERS: Dict[str, Dict[str, Any]] = {
 }
 
 
-def expand_template(template: str, issue_date: date, basin_id: Optional[str] = None) -> str:
+def expand_template(
+    template: str,
+    issue_date: date,
+    basin_id: Optional[str] = None,
+    ens_no: Optional[str] = None,
+    ens: Optional[str] = None,
+) -> str:
     """Substitute date placeholders in a path template.
 
     Supported placeholders:
@@ -24,6 +30,7 @@ def expand_template(template: str, issue_date: date, basin_id: Optional[str] = N
     - {yyyymmdd}: YYYYMMDD
     - {yyyy}, {mm}, {dd}
     - {basin_id}
+    - {ens_no}, {ens}
     """
     return template.format(
         date=issue_date.isoformat(),
@@ -32,6 +39,8 @@ def expand_template(template: str, issue_date: date, basin_id: Optional[str] = N
         mm=issue_date.strftime("%m"),
         dd=issue_date.strftime("%d"),
         basin_id=basin_id or "",
+        ens_no=ens_no if ens_no is not None else "00",
+        ens=ens if ens is not None else "00",
     )
 
 
@@ -62,6 +71,6 @@ class BasinRunOutput:
 
     basin_id: str
     issue_date: str
-    forecast_path: Optional[str]
+    forecast_paths: List[str]
     units: List[UnitDecision]
     metadata: Dict[str, Any]
