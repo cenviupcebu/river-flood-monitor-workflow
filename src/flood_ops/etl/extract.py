@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 import json
+import re
 
 from flood_ops.config import BasinConfig
 from flood_ops.logging import get_logger
@@ -14,7 +15,7 @@ logger = get_logger(__name__)
 
 
 """
-Step 2 — Extract:
+Extract:
 - download the GloFAS ensemble forecast files.
 - load OEP thresholds from the provided OEP JSON file.
 """
@@ -34,13 +35,12 @@ def extract(
     if run_spec.inputs is None:
         raise ValueError("Run spec must define inputs.oep_json")
 
-    # load GloFAS file path
-    forecast_path = _resolve_forecast_path(run_spec, issue_date, basin_id)
-    if not forecast_path:
+    # load GloFAS file paths (single file or ensemble-member files)
+    forecast_paths = _resolve_forecast_path(run_spec, issue_date, basin_id)
+    if not forecast_paths:
         raise FileNotFoundError(
             f"Forecast file not available for basin '{basin_id}' on {issue_date}. "
-            "Either supply a forecast file via ingest settings or set "
-            "inputs.precomputed_impacts_template for prototype mode."
+            "Supply a forecast file via ingest settings."
         )
 
     det = run_spec.detection
@@ -52,7 +52,7 @@ def extract(
 
     return {
         "basin_id": basin_id,
-        "forecast_path": forecast_path,
+        "forecast_paths": forecast_paths,
         "oep_path": oep_path,
         "thresholds": thresholds,
         "evt_parquet": evt_parquet,
@@ -64,36 +64,49 @@ def _resolve_forecast_path(
     run_spec: PipelineRunSpec,
     issue_date: date,
     basin_id: str,
-) -> Optional[str]:
+) -> Optional[List[str]]:
     """
-    Return the local path to the GloFAS ensemble GRIB file.
+    Return local path(s) to the GloFAS ensemble NetCDF forecast files.
 
-    The path is derived from the run-spec template. If the file is absent
-    and ``download_if_missing`` is True a warning is logged (actual download
-    is reserved for a future implementation).
+    The path is derived from ``forecast_path_template``. If the template
+    contains ``{ens}`` or ``{ens_no}``, it is treated as a glob pattern and
+    all matching files are returned in sorted order.
 
-    Returns ``None`` when no ingest settings are defined or the file cannot
-    be located.
+    Returns ``None`` when no ingest settings are defined or no files are found.
     """
     if run_spec.ingest is None:
         logger.debug("No ingest settings — skipping forecast path resolution")
         return None
 
-    candidate = Path(
-        expand_template(run_spec.ingest.forecast_path_template, issue_date, basin_id)
-    )
-    logger.info("Checking forecast file: %s", candidate)
+    template = run_spec.ingest.forecast_path_template
+    has_ens_placeholder = "{ens}" in template or "{ens_no}" in template
+    if has_ens_placeholder:
+        template_for_lookup = template.replace("{ens}", "*").replace("{ens_no}", "*")
+    else:
+        # Support templates using a fixed member token like dis_00_YYYYMMDD00.nc.
+        template_for_lookup = re.sub(r"([_-])00(?=[_-])", r"\1*", template, count=1)
 
-    if candidate.exists():
-        logger.info("Forecast file found: %s", candidate)
-        return str(candidate)
+    candidate = Path(expand_template(template_for_lookup, issue_date, basin_id))
 
-    logger.warning("Forecast file not found: %s", candidate)
+    if has_ens_placeholder or template_for_lookup != template:
+        logger.info("Checking forecast file pattern: %s", candidate)
+        matched = sorted(p for p in candidate.parent.glob(candidate.name) if p.is_file())
+        if matched:
+            logger.info("Forecast files found: %d match(es)", len(matched))
+            return [str(p) for p in matched]
+    else:
+        logger.info("Checking forecast file: %s", candidate)
+        if candidate.exists():
+            logger.info("Forecast file found: %s", candidate)
+            return [str(candidate)]
+
+    logger.warning("Forecast file(s) not found: %s", candidate)
     if run_spec.ingest.download_if_missing:
         raise NotImplementedError(
             "download_if_missing=True but automatic download is not yet implemented. "
             "Continuing without forecast."
         )
+    return None
 
 
 def _load_oep_thresholds(
