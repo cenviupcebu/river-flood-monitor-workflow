@@ -24,45 +24,45 @@ from .utils import BasinRunOutput, UnitDecision, expand_template
 logger = get_logger(__name__)
 
 
-def forecast(
-    extracted: Dict[str, Any],
-    issue_date: date,
-    run_spec: PipelineRunSpec,
-) -> Dict[str, Any]:
-    """Run flood detection, exceedance, and alert rule evaluation."""
-    basin_id = str(extracted["basin_id"])
-    logger.info("Starting evaluation — basin='%s', issue_date=%s", basin_id, issue_date)
+# def forecast(
+#     extracted: Dict[str, Any],
+#     issue_date: date,
+#     run_spec: PipelineRunSpec,
+# ) -> Dict[str, Any]:
+#     """Run flood detection, exceedance, and alert rule evaluation."""
+#     basin_id = str(extracted["basin_id"])
+#     logger.info("Starting evaluation — basin='%s', issue_date=%s", basin_id, issue_date)
 
-    impact_cube, members, _ = detect_flood_events(
-        forecast_path=str(extracted["forecast_path"]),
-        evt_params_path=extracted["evt_parquet"],
-        oep_json_path=extracted["oep_path"],
-        issue_date=issue_date,
-        basin_id=basin_id,
-        settings=extracted["det"],
-    )
-    impacts_source = f"step2_detect:{extracted['forecast_path']}"
-    logger.info("Detection mode complete — impact cube has %d units", len(impact_cube))
+#     impact_cube, members, _ = detect_flood_events(
+#         forecast_path=str(extracted["forecast_path"]),
+#         evt_params_path=extracted["evt_parquet"],
+#         oep_json_path=extracted["oep_path"],
+#         issue_date=issue_date,
+#         basin_id=basin_id,
+#         settings=extracted["det"],
+#     )
+#     impacts_source = f"step2_detect:{extracted['forecast_path']}"
+#     logger.info("Detection mode complete — impact cube has %d units", len(impact_cube))
 
-    prob_exceed = compute_prob_exceed(impact_cube, extracted["thresholds"], members)
-    units: List[UnitDecision] = apply_tier_rules(
-        prob_exceed,
-        extracted["thresholds"],
-        run_spec.decision,
-    )
+#     prob_exceed = compute_prob_exceed(impact_cube, extracted["thresholds"], members)
+#     units: List[UnitDecision] = apply_tier_rules(
+#         prob_exceed,
+#         extracted["thresholds"],
+#         run_spec.decision,
+#     )
 
-    logger.info(
-        "Evaluation complete — basin='%s', %d units evaluated",
-        basin_id,
-        len(units),
-    )
-    return {
-        "basin_id": basin_id,
-        "forecast_path": extracted["forecast_path"],
-        "oep_path": extracted["oep_path"],
-        "units": units,
-        "impacts_source": impacts_source,
-    }
+#     logger.info(
+#         "Evaluation complete — basin='%s', %d units evaluated",
+#         basin_id,
+#         len(units),
+#     )
+#     return {
+#         "basin_id": basin_id,
+#         "forecast_path": extracted["forecast_path"],
+#         "oep_path": extracted["oep_path"],
+#         "units": units,
+#         "impacts_source": impacts_source,
+#     }
 
 
 def save(
