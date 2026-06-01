@@ -28,6 +28,7 @@ class DecisionSettings:
 
     persist_days: int = 2
     min_lead: int = 5
+    max_lead: int = 15
     oep_min: float = 100.0
     rules: List[TierRule] = field(default_factory=list)
 
@@ -57,7 +58,11 @@ class DetectionSettings:
     grib_shortname: str = "dis24"
     # Return periods to evaluate in the impact space
     flood_detect_rps: List[int] = field(default_factory=lambda: [2, 5, 10, 20])
-    # Paths to spatial resources (required when not using precomputed impacts)
+    # Maximum return period used when converting discharge to RP
+    rp_cap: float = 500.0
+    # Expected number of ensemble members in the forecast source
+    total_ensemble_members: int = 51
+    # Paths to spatial resources for flood detection
     evt_params_parquet: str = ""
     jrc_root: str = ""
     worldpop_tif: str = ""
@@ -69,7 +74,6 @@ class InputSettings:
     """Required data paths consumed in Steps 3-4."""
 
     oep_json: str
-    precomputed_impacts_template: Optional[str] = None
 
 
 @dataclass
@@ -132,7 +136,6 @@ def load_run_spec(path: str) -> PipelineRunSpec:
     if inputs_cfg.get("oep_json"):
         inputs = InputSettings(
             oep_json=str(inputs_cfg["oep_json"]),
-            precomputed_impacts_template=inputs_cfg.get("precomputed_impacts_template"),
         )
 
     output = None
@@ -153,6 +156,8 @@ def load_run_spec(path: str) -> PipelineRunSpec:
         flood_detect_rps=[
             int(r) for r in detection_cfg.get("flood_detect_rps", _default_rps)
         ],
+        rp_cap=float(detection_cfg.get("rp_cap", 500.0)),
+        total_ensemble_members=int(detection_cfg.get("total_ensemble_members", 51)),
         evt_params_parquet=str(detection_cfg.get("evt_params_parquet", "")),
         jrc_root=str(detection_cfg.get("jrc_root", "")),
         worldpop_tif=str(detection_cfg.get("worldpop_tif", "")),
@@ -163,6 +168,7 @@ def load_run_spec(path: str) -> PipelineRunSpec:
     decision = DecisionSettings(
         persist_days=int(decision_cfg.get("persist_days", 2)),
         min_lead=int(decision_cfg.get("min_lead", 5)),
+        max_lead=int(decision_cfg.get("max_lead", 15)),
         oep_min=float(decision_cfg.get("oep_min", 100.0)),
         rules=parse_tier_rules(rules_raw),
     )
