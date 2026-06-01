@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import json
+import unicodedata
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -64,7 +65,7 @@ def save(
             BasinRunOutput(
                 basin_id=str(basin["basin_id"]),
                 issue_date=issue_date.isoformat(),
-                forecast_path=str(basin["forecast_path"]),
+                forecast_paths=basin["forecast_paths"],
                 units=basin["units"],
                 metadata=metadata,
             )
@@ -78,7 +79,7 @@ def _serialise_basin(result: BasinRunOutput) -> Dict[str, Any]:
     return {
         "basin_id": result.basin_id,
         "issue_date": result.issue_date,
-        "forecast_path": result.forecast_path,
+        "forecast_paths": result.forecast_paths,
         "metadata": result.metadata,
         "units": [
             {
@@ -99,6 +100,175 @@ def _serialise_basin(result: BasinRunOutput) -> Dict[str, Any]:
             for unit in result.units
         ],
     }
+
+
+def _normalise_admin_name(name: str) -> str:
+    """Normalise admin names for robust matching across data sources."""
+    cleaned = unicodedata.normalize("NFKD", name)
+    ascii_only = "".join(ch for ch in cleaned if not unicodedata.combining(ch))
+    return " ".join(ascii_only.strip().lower().split())
+
+
+def _plot_maps(
+    run_spec: PipelineRunSpec,
+    csv_path: Path,
+    output_dir: Path,
+) -> List[Path]:
+    """Create per-basin and per-lead maps for activated admin areas."""
+    try:
+        import geopandas as gpd
+        import matplotlib.pyplot as plt
+        import pandas as pd
+    except ImportError as exc:
+        logger.warning("Skipping map plotting due to missing dependency: %s", exc)
+        return []
+
+    adm3_geojson_path = Path(run_spec.detection.adm3_geojson)
+    if not adm3_geojson_path.exists():
+        logger.warning("Skipping map plotting: ADM3 GeoJSON not found: %s", adm3_geojson_path)
+        return []
+
+    if not csv_path.exists():
+        logger.warning("Skipping map plotting: CSV output not found: %s", csv_path)
+        return []
+
+    df = pd.read_csv(csv_path)
+    if df.empty:
+        logger.info("Skipping map plotting: CSV has no rows")
+        return []
+
+    # Keep only activated rows that have a valid lead day.
+    fired_df = df.loc[df["fired"].astype(str).str.lower() == "true"].copy()
+    fired_df["fire_lead"] = pd.to_numeric(fired_df["fire_lead"], errors="coerce")
+    fired_df = fired_df.loc[fired_df["fire_lead"].notna()].copy()
+    if fired_df.empty:
+        logger.info("Skipping map plotting: no activated rows in CSV")
+        return []
+
+    fired_df["fire_lead"] = fired_df["fire_lead"].astype(int)
+    fired_df["unit_name"] = (
+        fired_df["unit_id"].astype(str).str.replace(r"^ADM3::", "", regex=True)
+    )
+    fired_df["unit_name_norm"] = fired_df["unit_name"].map(_normalise_admin_name)
+
+    tier_rank = {"T1": 1, "T2": 2, "T3": 3}
+    tier_colors = {"T1": "#FFD54F", "T2": "#FB8C00", "T3": "#D32F2F"}
+    fired_df["tier_rank"] = fired_df["tier"].map(tier_rank).fillna(0).astype(int)
+
+    # Select one tier per unit (highest activated tier) for each basin and lead.
+    fired_df = (
+        fired_df.sort_values("tier_rank")
+        .groupby(["basin_id", "fire_lead", "unit_name_norm"], as_index=False)
+        .last()
+    )
+
+    adm3_gdf = gpd.read_file(adm3_geojson_path)
+    name_col = None
+    for col in adm3_gdf.columns:
+        if "adm3_en" in col.lower():
+            name_col = col
+            break
+    if name_col is None:
+        raise ValueError(
+            "Cannot detect admin name column in ADM3 GeoJSON "
+            "(expected column like ADM3_EN)"
+        )
+
+    admin_gdf = adm3_gdf[[name_col, "geometry"]].copy()
+    admin_gdf = admin_gdf.rename(columns={name_col: "adm3_en"})
+    admin_gdf["unit_name_norm"] = admin_gdf["adm3_en"].astype(str).map(
+        _normalise_admin_name
+    )
+
+    map_dir = output_dir / "maps"
+    map_dir.mkdir(parents=True, exist_ok=True)
+    map_paths: List[Path] = []
+
+    # Plot one map for each basin and activated lead day.
+    for (basin_id, fire_lead), lead_rows in fired_df.groupby(["basin_id", "fire_lead"]):
+        basin_rows = df.loc[df["basin_id"] == basin_id].copy()
+        basin_rows["unit_name"] = (
+            basin_rows["unit_id"].astype(str).str.replace(r"^ADM3::", "", regex=True)
+        )
+        basin_rows["unit_name_norm"] = basin_rows["unit_name"].map(_normalise_admin_name)
+
+        basin_units = basin_rows["unit_name_norm"].dropna().unique().tolist()
+        basin_gdf = admin_gdf.loc[admin_gdf["unit_name_norm"].isin(basin_units)].copy()
+        if basin_gdf.empty:
+            logger.warning(
+                "Skipping map for basin=%s lead=%s: no admin geometry matched",
+                basin_id,
+                fire_lead,
+            )
+            continue
+
+        merged = basin_gdf.merge(
+            lead_rows[["unit_name_norm", "tier"]],
+            on="unit_name_norm",
+            how="left",
+        )
+        merged["color"] = merged["tier"].map(tier_colors)
+
+        fig, ax = plt.subplots(figsize=(9, 9))
+
+        # Non-activated units are boundaries only.
+        merged.boundary.plot(ax=ax, color="#4D4D4D", linewidth=0.5)
+
+        for tier, color in tier_colors.items():
+            tier_gdf = merged.loc[merged["tier"] == tier]
+            if not tier_gdf.empty:
+                tier_gdf.plot(ax=ax, color=color, edgecolor="#333333", linewidth=0.5)
+
+        ax.set_axis_off()
+        ax.set_title(f"{basin_id} | activated alerts at lead day {fire_lead}")
+
+        legend_handles = [
+            plt.Line2D(
+                [0],
+                [0],
+                marker="s",
+                color="w",
+                markerfacecolor=tier_colors["T1"],
+                markersize=10,
+                label="T1",
+            ),
+            plt.Line2D(
+                [0],
+                [0],
+                marker="s",
+                color="w",
+                markerfacecolor=tier_colors["T2"],
+                markersize=10,
+                label="T2",
+            ),
+            plt.Line2D(
+                [0],
+                [0],
+                marker="s",
+                color="w",
+                markerfacecolor=tier_colors["T3"],
+                markersize=10,
+                label="T3",
+            ),
+            plt.Line2D(
+                [0],
+                [0],
+                color="#4D4D4D",
+                linewidth=1,
+                label="Not activated",
+            ),
+        ]
+        ax.legend(handles=legend_handles, loc="lower left", frameon=True)
+
+        map_file = map_dir / f"{basin_id}_lead{fire_lead}_activated_map.png"
+        fig.tight_layout()
+        fig.savefig(map_file, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+
+        map_paths.append(map_file)
+
+    logger.info("Map plotting complete: %d map(s) written to %s", len(map_paths), map_dir)
+    return map_paths
 
 
 def _write_outputs(
@@ -125,7 +295,7 @@ def _write_outputs(
 
     if output_format == "csv":
         out_file = output_dir / f"trigger_decisions_{issue_date.isoformat()}_{timestamp}.csv"
-        with open(out_file, "w", newline="", encoding="utf-8") as f:
+        with open(out_file, "w", newline="", encoding="utf-8") as f:  # TODO: specify separator
             writer = csv.DictWriter(f, fieldnames=_CSV_FIELDS)
             writer.writeheader()
             for basin in basin_results:
@@ -146,6 +316,7 @@ def _write_outputs(
                             }
                         )
         logger.info("CSV output written: %s", out_file)
+        _plot_maps(run_spec=run_spec, csv_path=out_file, output_dir=output_dir)
         return out_file
 
     out_file = output_dir / f"trigger_decisions_{issue_date.isoformat()}_{timestamp}.json"
