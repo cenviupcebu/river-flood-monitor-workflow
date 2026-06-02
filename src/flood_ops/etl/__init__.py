@@ -3,15 +3,14 @@
 Module layout
 -------------
 pipeline.py               Orchestration entry points for daily ETL runs.
-step0_input_evaluation.py Backward-compatible imports for orchestration.
-utils.py                  Shared dataclasses and path-template helper.
+pipeline_step_flags.py    Optional step-level execution flags for selective runs.
 run_spec.py               PipelineRunSpec settings dataclasses and YAML loader.
-step1_ingest.py           Resolve or download the GloFAS ensemble forecast file.
-step2_detect.py           Spatial flood-event detection from GRIB (NB07 algorithm).
-step3_impact.py           Load or compute population affected per member/lead/unit.
-step4_evaluate.py         Compute ensemble probability of exceeding OEP thresholds.
-step5_decide.py           Apply tier rules with persistence and minimum-lead constraints.
-step6_output.py           Serialise trigger decisions for downstream systems.
+prepare.py                Input preparation helpers (forecast acquisition scaffolding).
+extract.py                Basin input extraction and threshold loading.
+forecast.py               Detection, impact evaluation, and tier decision logic.
+save.py                   Output serialisation for downstream systems.
+utils.py                  Shared dataclasses and path-template helper.
+extract-example.py        Example extraction helpers for experimentation.
 
 Public API
 ----------
