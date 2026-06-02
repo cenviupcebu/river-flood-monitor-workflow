@@ -5,7 +5,7 @@
 run_name: "daily_flood_monitoring_prototype"
 
 ingest:
-  # Step 1 — path to the GloFAS ensemble GRIB for this issue date.
+  # Step 1 — path to the GloFAS ensemble NetCDF forecast files for this issue date.
   # Variables available: {date}, {yyyymmdd}, {yyyy}, {mm}, {dd}, {basin_id}, {ens_no}
   forecast_path_template: "data/bronze/glofas/forecast/dis_{ens_no}_{yyyymmdd}00.nc"
   download_if_missing: false
@@ -25,8 +25,8 @@ detection:
   depth_threshold_m: 0.02
   # 8-neighbour (Moore=2) or 4-neighbour (von Neumann=1) connectivity
   cc_connectivity: 2
-  # GRIB shortname for daily mean discharge
-  grib_shortname: "dis24"
+  # NetCDF variable name for discharge
+  forecast_var_name: "dis"
   # Return periods to compute in impact space (drives tier thresholds)
   flood_detect_rps: [2, 5, 10, 20]
   # Maximum return period used when converting discharge to RP

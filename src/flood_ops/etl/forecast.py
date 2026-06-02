@@ -22,35 +22,47 @@ from .utils import TierDecision, UnitDecision
 from flood_ops.logging import get_logger
 logger = get_logger(__name__)
 
-"""
-Detect: spatial flood event detection from a GloFAS ensemble.
+"""Step 2 — Detect: spatial flood event detection from a GloFAS ensemble.
+
+Implements the NB07 detection algorithm (cells 3-10):
+
 1. Load EVT1 GPD fits from ``evt_pot_calibration.parquet`` (NB01 output).
-2. For each ensemble member x lead time, extract discharge from the GRIB,
+2. For each ensemble member x lead time, extract discharge from forecast NetCDF files,
    compute per-cell return periods, run 8-neighbour connected-component
    labelling, and filter out patches smaller than ``A_MIN_KM2``.
 3. For flood-triggering members, run the full JRC+WorldPop impact pipeline
    (NB04-style) to compute people affected per admin unit per RP.
 4. Return an ``ImpactCube`` compatible with ``step3_impact`` / ``step4_evaluate``.
 
+References
+----------
+NB07 ``07_Trigger_Validation_Reforecast.ipynb`` — cells 3-10 (reference impl.)
+"""
+"""Step 3 — Impact: compute population affected per member/lead/unit.
 
-Impact: compute population affected per member/lead/unit.
+This module provides:
 
 1) ``compute_impacts_from_event_patches`` for operational mode. It calls
     ``philflood.models.impact.population_exposure.aggregate_affected_population``
     on each event patch detected in Step 2 using the patch depth raster and
     WorldPop grid.
+2) ``load_precomputed_impacts`` as a compatibility bridge for prototype mode
+    where impacts are pre-exported to JSON.
+"""
+"""Step 4 — Evaluate: compute ensemble probability of exceeding OEP thresholds."""
 
-Evaluate: compute ensemble probability of exceeding OEP thresholds.
-
-Decide: apply tier rules with persistence and minimum-lead constraints."""
+"""Step 5 — Decide: apply tier rules with persistence and minimum-lead constraints."""
 
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
+_RP_CAP = 500.0
+TOTAL_ENSEMBLE_MEMBERS = 51
+
+
 # Type alias: unit → lead → member → rp → people
 ImpactCube = Dict[str, Dict[int, Dict[int, Dict[int, float]]]]
-
 
 def forecast(
     extracted: Dict[str, Any],
@@ -61,27 +73,28 @@ def forecast(
     basin_id = str(extracted["basin_id"])
     logger.info("Starting evaluation — basin='%s', issue_date=%s", basin_id, issue_date)
 
-    lead_days_list = _build_lead_days_list(
-        min_lead=run_spec.decision.min_lead,
-        max_lead=run_spec.decision.max_lead,
-    )
-
-    forecast_filename_example = None
-    if run_spec.ingest is not None:
-        forecast_filename_example = Path(run_spec.ingest.forecast_path_template).name
-
-    impact_cube, members, _ = detect_flood_events(
-        forecast_paths=extracted["forecast_paths"],
-        forecast_filename_example=forecast_filename_example,
-        evt_params_path=extracted["evt_parquet"],
-        oep_json_path=extracted["oep_path"],
-        issue_date=issue_date,
-        basin_id=basin_id,
-        settings=extracted["det"],
-        lead_days_list=lead_days_list,
-    )
-    impacts_source = "step2_detect:" + ",".join(str(p) for p in extracted["forecast_paths"])
-    logger.info("Detection mode complete — impact cube has %d units", len(impact_cube))
+    precomputed_impacts_path = extracted.get("precomputed_impacts_path")
+    if precomputed_impacts_path:
+        precomputed_path = Path(precomputed_impacts_path)
+        if not precomputed_path.exists():
+            raise FileNotFoundError(
+                f"Precomputed impacts file not found: {precomputed_path}"
+            )
+        members, _, impact_cube = _load_precomputed_impacts(precomputed_path)
+        impacts_source = f"precomputed:{precomputed_path}"
+        logger.info("Prototype mode complete — impact cube has %d units", len(impact_cube))
+    else:
+        impact_cube, members, _ = detect_flood_events(
+            forecast_paths=extracted["forecast_paths"],
+            forecast_filename_example=extracted.get("forecast_filename_example"),
+            evt_params_path=extracted["evt_parquet"],
+            oep_json_path=extracted["oep_path"],
+            issue_date=issue_date,
+            basin_id=basin_id,
+            settings=extracted["det"],
+        )
+        impacts_source = "step2_detect:" + ",".join(str(p) for p in extracted["forecast_paths"])
+        logger.info("Detection mode complete — impact cube has %d units", len(impact_cube))
 
     prob_exceed = _compute_prob_exceed(impact_cube, extracted["thresholds"], members)
     units: List[UnitDecision] = _apply_tier_rules(
@@ -102,21 +115,6 @@ def forecast(
         "units": units,
         "impacts_source": impacts_source,
     }
-
-
-def _build_lead_days_list(min_lead: int, max_lead: int) -> List[int]:
-    """Build an inclusive lead-day list from decision settings."""
-    min_ld = int(min_lead)
-    max_ld = int(max_lead)
-
-    if min_ld < 1:
-        raise ValueError(f"Invalid lead window: min_lead={min_ld} must be >= 1")
-    if max_ld < min_ld:
-        raise ValueError(
-            f"Invalid lead window: min_lead={min_ld} must be <= max_lead={max_ld}"
-        )
-
-    return list(range(min_ld, max_ld + 1))
 
 
 def _find_latest_persistent_lead(
@@ -514,6 +512,65 @@ def _compute_impacts_from_event_patches(
     return members, leads, cube
 
 
+def _load_precomputed_impacts(
+    impacts_path: Path,
+) -> Tuple[List[int], List[int], ImpactCube]:
+    """Load an ensemble impact cube from a JSON file.
+
+    Expected schema::
+
+        {
+          "ensemble_members": [1, 2, ...],
+          "lead_days": [1, 2, ...],
+          "records": [
+            {
+              "unit_id": "ADM3::Name",
+              "lead_day": 5,
+              "member_id": 1,
+              "rp_affected_people": {"2": 123.0, "5": 77.0, "10": 20.0}
+            }
+          ]
+        }
+
+    Returns
+    -------
+    (ensemble_members, lead_days, cube)
+    """
+    logger.info("Loading precomputed impacts from %s", impacts_path)
+    raw = json.loads(impacts_path.read_text(encoding="utf-8"))
+    members = [int(m) for m in raw.get("ensemble_members", [])]
+    leads = [int(ld) for ld in raw.get("lead_days", [])]
+
+    cube: ImpactCube = {}
+    n_records = 0
+    for rec in raw.get("records", []):
+        unit = str(rec.get("unit_id", ""))
+        if not unit:
+            continue
+        lead = int(rec.get("lead_day", 0))
+        member = int(rec.get("member_id", 0))
+        if lead <= 0 or member < 0:
+            continue
+
+        rp_dict: Dict[int, float] = {}
+        for rp_raw, value in (rec.get("rp_affected_people") or {}).items():
+            try:
+                rp_dict[int(float(rp_raw))] = float(value)
+            except (TypeError, ValueError):
+                continue
+
+        cube.setdefault(unit, {}).setdefault(lead, {})[member] = rp_dict
+        n_records += 1
+
+    logger.info(
+        "Loaded impact cube: %d members, %d lead days, %d records across %d units",
+        len(members),
+        len(leads),
+        n_records,
+        len(cube),
+    )
+    return members, leads, cube
+
 # ---------------------------------------------------------------------------
 # EVT1 GPD helpers  (extracted from NB07 Cell 3)
 # ---------------------------------------------------------------------------
@@ -535,7 +592,7 @@ def _gpd_exceedance_rate(
     return np.clip(lam * surv, 1e-12, None)
 
 
-def discharge_to_return_period(q, u, sigma, xi, lam, rp_cap: float):
+def discharge_to_return_period(q, u, sigma, xi, lam, rp_cap: float = _RP_CAP):
     """Convert discharge to return period (years) via EVT1 GPD."""
     import numpy as np
     rate = _gpd_exceedance_rate(q=q, u=u, sigma=sigma, xi=xi, lam=lam)
@@ -585,7 +642,7 @@ def _build_support_grid(evt_params) -> Tuple:
 
 
 # ---------------------------------------------------------------------------
-# GRIB reading utilities  (extracted from NB07 Cell 3 section [C])
+# Forecast reading utilities  (adapted from NB07 Cell 3 section [C])
 # ---------------------------------------------------------------------------
 
 def _nearest_index_1d(arr_1d, targets):
@@ -612,7 +669,7 @@ def _nearest_index_1d(arr_1d, targets):
     return idx_final
 
 
-def _dt_from_grib(data_date: int, data_time: int):
+def _dt_from_data_fields(data_date: int, data_time: int):
     import pandas as pd
     return pd.to_datetime(f"{int(data_date):08d}{int(data_time):04d}", format="%Y%m%d%H%M")
 
@@ -621,7 +678,6 @@ def _build_netcdf_index(
     file_paths: Sequence[Path],
     var_name: str,
     time_dim: str,
-    total_ensemble_members: int,
     forecast_filename_example: Optional[str] = None,
 ) -> dict:
     """Index NetCDF files without loading all data into memory.
@@ -653,12 +709,7 @@ def _build_netcdf_index(
     # and is named with a dis_XX_ token. Members without matching files are skipped.
     member_file_pairs: List[Tuple[int, Path]] = []
     sorted_paths = sorted(file_paths)
-    total_ensemble_members = int(total_ensemble_members)
-    if total_ensemble_members < 1:
-        raise ValueError(
-            f"total_ensemble_members must be >= 1, got {total_ensemble_members}"
-        )
-    for ensemble in range(0, total_ensemble_members):
+    for ensemble in range(0, TOTAL_ENSEMBLE_MEMBERS):
         token = _member_token(ensemble)
         matched_path = next(
             (p for p in sorted_paths if token in p.name.lower()),
@@ -699,8 +750,7 @@ def _build_netcdf_index(
 
 def _open_forecast_source(
     forecast_paths: Sequence[Path],
-    shortname: str,
-    total_ensemble_members: int,
+    forecast_var_name: str,
     forecast_filename_example: Optional[str] = None,
 ):
     """
@@ -716,7 +766,7 @@ def _open_forecast_source(
 
     # Open first file to discover structure
     with xr.open_dataset(forecast_paths[0]) as ds:
-        var_name = "dis"
+        var_name = str(forecast_var_name or "dis")
         if var_name not in ds.data_vars:
             raise RuntimeError(
                 f"Expected NetCDF variable '{var_name}' not found in: {forecast_paths[0]}"
@@ -744,7 +794,6 @@ def _open_forecast_source(
         forecast_paths,
         var_name,
         time_dim,
-        total_ensemble_members=total_ensemble_members,
         forecast_filename_example=forecast_filename_example,
     )
     
@@ -756,8 +805,8 @@ def _open_forecast_source(
     return source, nc_index, lat_vals.astype(float), lon_vals.astype(float)
 
 
-def _read_grib_snapshot(
-    grbs,
+def _read_forecast_snapshot(
+    forecast_source,
     msg_index: dict,
     vt_lookup: dict,
     valid_date: pd.Timestamp,
@@ -783,8 +832,8 @@ def _read_grib_snapshot(
         # On-demand file loading for memory efficiency
         file_path, t_idx = msg_num
         with xr.open_dataset(file_path) as ds:
-            da = ds[grbs["var_name"]]
-            data = da.isel({grbs["time_dim"]: t_idx}).values
+            da = ds[forecast_source["var_name"]]
+            data = da.isel({forecast_source["time_dim"]: t_idx}).values
         
         return data[cell_lat_idx, cell_lon_idx].astype(float)
     except Exception as exc:
@@ -797,8 +846,8 @@ def _read_grib_snapshot(
 # ---------------------------------------------------------------------------
 
 def _detect_flood_patches_for_lead(
-    grbs,
-    grib_index: dict,
+    forecast_source,
+    forecast_index: dict,
     lead_window,
     basin_cells: List[str],
     evt_params,
@@ -812,7 +861,6 @@ def _detect_flood_patches_for_lead(
     init_dt,
     support_lat_vals,
     support_lon_vals,
-    rp_cap: float,
 ) -> Tuple[List[int], Dict[int, List[Dict[str, Any]]]]:
     """Phase 1: detect flood members and record qualifying event patches.
 
@@ -838,29 +886,24 @@ def _detect_flood_patches_for_lead(
     flood_members: List[int] = []
     patches_by_member: Dict[int, List[Dict[str, Any]]] = {}
 
-    for member in grib_index["members"]:
+    for member in forecast_index["members"]:
         member_patches: List[Dict[str, Any]] = []
         for vdate in lead_window:
-            q_vals = _read_grib_snapshot(
-                grbs,
-                grib_index["msg_index"],
-                grib_index["vt_lookup"],
-                vdate,
-                member,
-                init_dt,
-                cell_lat_idx,
-                cell_lon_idx,
+            q_vals = _read_forecast_snapshot(
+                forecast_source,
+                forecast_index["msg_index"],
+                forecast_index["vt_lookup"],
+                vdate, member, init_dt, cell_lat_idx, cell_lon_idx,
             )
             if q_vals is None:
                 continue
             q_vals = q_vals * 1000  # TODO: temporary mock multiplier for trigger testing.
             rp = discharge_to_return_period(
-                q_vals[None, :], u, sigma, xi, lam, rp_cap=rp_cap
+                q_vals[None, :], u, sigma, xi, lam
             ).ravel()
             active_cells = rp >= t0_years
             if not active_cells.any():
                 continue
-
             g = np.zeros(grid_index.shape, dtype=bool)
             for k, cid in enumerate(cells):
                 if active_cells[k]:
@@ -869,15 +912,12 @@ def _detect_flood_patches_for_lead(
                         g[pos[0], pos[1]] = True
             if not g.any():
                 continue
-
             labs, nlab = label(g, structure=struct)
             if nlab == 0:
                 continue
-
             areas = np.bincount(labs.ravel(), weights=area_grid_km2.ravel())
             if len(areas) <= 1:
                 continue
-
             for lab_id in range(1, len(areas)):
                 if areas[lab_id] < a_min_km2:
                     continue
@@ -904,7 +944,6 @@ def _detect_flood_patches_for_lead(
         if member_patches:
             flood_members.append(member)
             patches_by_member[member] = member_patches
-
     return flood_members, patches_by_member
 
 
@@ -915,7 +954,6 @@ def _render_depth_raster_for_patch(
     bbox: Tuple[float, float, float, float],
     patch_bbox: Tuple[float, float, float, float],
     out_tif: Path,
-    rp_cap: float,
 ) -> bool:
     """Build and write an event depth raster clipped to one detected patch bbox."""
     import numpy as np
@@ -936,7 +974,6 @@ def _render_depth_raster_for_patch(
         ep.loc[cells, "sigma"].values[None, :],
         ep.loc[cells, "xi"].values[None, :],
         ep.loc[cells, "lam"].values[None, :],
-        rp_cap=rp_cap,
     ).ravel()
     if np.nanmax(rp_vals) < 2.0:
         return False
@@ -1103,16 +1140,21 @@ def _load_spatial_resources(settings: "DetectionSettings") -> dict:
     from rasterio.transform import from_bounds
 
     adm3_gdf = gpd.read_file(adm3_geojson).to_crs("EPSG:4326")
-    
+    # Build integer ID → name mapping
     admin_id_to_name: Dict[int, str] = {}
-    expected_name_col = "ADM3_EN"
     name_col = None
     for col in adm3_gdf.columns:
-        if expected_name_col.lower() in col.lower(): # TODO: to update to adm3_pcode if new oep received
+        if "adm3" in col.lower() and "name" in col.lower():
             name_col = col
             break
     if name_col is None:
-        raise ValueError(f"Cannot detect admin name column in ADM3 GeoJSON (expected column like {expected_name_col})")
+        # Fall back to first string column after geometry
+        for col in adm3_gdf.columns:
+            if col != "geometry" and adm3_gdf[col].dtype == object:
+                name_col = col
+                break
+    if name_col is None:
+        raise ValueError("Cannot detect admin name column in ADM3 GeoJSON")
 
     shapes = []
     for idx_row, row in enumerate(adm3_gdf.itertuples(), start=1):
@@ -1245,52 +1287,53 @@ def detect_flood_events(
 
     # --- Open forecast source (.nc/.nc4) -----------------------------------
     if isinstance(forecast_paths, str):
-        grib_paths = [Path(forecast_paths)]
+        forecast_paths = [Path(forecast_paths)]
     else:
-        grib_paths = [Path(p) for p in forecast_paths]
+        forecast_paths = [Path(p) for p in forecast_paths]
 
-    if not grib_paths:
+    if not forecast_paths:
         raise FileNotFoundError("No forecast file paths provided")
 
-    missing = [p for p in grib_paths if not p.exists()]
+    missing = [p for p in forecast_paths if not p.exists()]
     if missing:
         raise FileNotFoundError(f"Forecast file(s) not found: {missing}")
 
     try:
-        forecast_src, grib_index, grib_lat1d, grib_lon1d = _open_forecast_source(
-            grib_paths,
-            settings.grib_shortname,
-            total_ensemble_members=settings.total_ensemble_members,
+        forecast_src, forecast_index, forecast_lat1d, forecast_lon1d = _open_forecast_source(
+            forecast_paths,
+            settings.forecast_var_name,
             forecast_filename_example=forecast_filename_example,
         )
     except RuntimeError as exc:
         raise RuntimeError(
-            f"Failed to index forecast data {grib_paths}: {exc}"
+            f"Failed to index forecast data {forecast_paths}: {exc}"
         ) from exc
 
     cell_lats = np.array([_parse_cell_coords(c)[0] for c in basin_cells])
     cell_lons = np.array([_parse_cell_coords(c)[1] for c in basin_cells])
-    cell_lat_idx = _nearest_index_1d(grib_lat1d, cell_lats)
-    cell_lon_idx = _nearest_index_1d(grib_lon1d, cell_lons)
+    cell_lat_idx = _nearest_index_1d(forecast_lat1d, cell_lats)
+    cell_lon_idx = _nearest_index_1d(forecast_lon1d, cell_lons)
 
     init_dt = pd.Timestamp(issue_date)
     avail_inits = sorted(
-        {_dt_from_grib(dd, tt) for dd, tt in grib_index["inits"]}
+        {_dt_from_data_fields(dd, tt) for dd, tt in forecast_index["inits"]}
     )
     if avail_inits and init_dt not in avail_inits:
         nearest_init = min(avail_inits, key=lambda d: abs(d - init_dt))
         logger.warning(
-            "init_dt %s not in GRIB; using nearest %s", init_dt.date(), nearest_init.date()
+            "init_dt %s not in forecast index; using nearest %s",
+            init_dt.date(),
+            nearest_init.date(),
         )
         init_dt = nearest_init
 
-    all_members: List[int] = grib_index["members"]
+    all_members: List[int] = forecast_index["members"]
     impact_cube: ImpactCube = {}
 
     # --- Main loop: per lead time -------------------------------------------
     with tempfile.TemporaryDirectory(prefix=f"step3_patch_{basin_id}_") as patch_dir:
         patch_dir_path = Path(patch_dir)
-        for lead_days in lead_days_list[:2]: # TODO: remove [:2] limit after testing
+        for lead_days in lead_days_list:
             lead_window = pd.date_range(
                 init_dt + pd.Timedelta(days=1),
                 init_dt + pd.Timedelta(days=lead_days),
@@ -1299,8 +1342,8 @@ def detect_flood_events(
 
             # Phase 1: detect flood members and event patches via connected components
             flood_members, patches_by_member = _detect_flood_patches_for_lead(
-                grbs=forecast_src,
-                grib_index=grib_index,
+                forecast_source=forecast_src,
+                forecast_index=forecast_index,
                 lead_window=lead_window,
                 basin_cells=basin_cells,
                 evt_params=evt_params,
@@ -1314,7 +1357,6 @@ def detect_flood_events(
                 init_dt=init_dt,
                 support_lat_vals=lat_vals,
                 support_lon_vals=lon_vals,
-                rp_cap=settings.rp_cap,
             )
 
             n_patches = sum(len(v) for v in patches_by_member.values())
@@ -1328,10 +1370,10 @@ def detect_flood_events(
             for member in flood_members:
                 for patch_idx, patch_meta in enumerate(patches_by_member.get(member, []), start=1):
                     vdate = patch_meta["valid_date"]
-                    q_vals = _read_grib_snapshot(
+                    q_vals = _read_forecast_snapshot(
                         forecast_src,
-                        grib_index["msg_index"],
-                        grib_index["vt_lookup"],
+                        forecast_index["msg_index"],
+                        forecast_index["vt_lookup"],
                         vdate,
                         member,
                         init_dt,
@@ -1353,7 +1395,6 @@ def detect_flood_events(
                         bbox=bbox,
                         patch_bbox=patch_meta["bbox"],
                         out_tif=depth_raster,
-                        rp_cap=settings.rp_cap,
                     )
                     if not ok:
                         continue

@@ -54,8 +54,8 @@ class DetectionSettings:
     depth_threshold_m: float = 0.02
     # 8-neighbour (Moore) connectivity for connected-component labelling
     cc_connectivity: int = 2
-    # GRIB variable shortname for daily mean discharge
-    grib_shortname: str = "dis24"
+    # NetCDF discharge variable name in forecast files
+    forecast_var_name: str = "dis"
     # Return periods to evaluate in the impact space
     flood_detect_rps: List[int] = field(default_factory=lambda: [2, 5, 10, 20])
     # Maximum return period used when converting discharge to RP
@@ -152,7 +152,7 @@ def load_run_spec(path: str) -> PipelineRunSpec:
         a_min_km2=float(detection_cfg.get("a_min_km2", 100.0)),
         depth_threshold_m=float(detection_cfg.get("depth_threshold_m", 0.02)),
         cc_connectivity=int(detection_cfg.get("cc_connectivity", 2)),
-        grib_shortname=str(detection_cfg.get("grib_shortname", "dis24")),
+        forecast_var_name=str(detection_cfg.get("forecast_var_name", "dis")),
         flood_detect_rps=[
             int(r) for r in detection_cfg.get("flood_detect_rps", _default_rps)
         ],

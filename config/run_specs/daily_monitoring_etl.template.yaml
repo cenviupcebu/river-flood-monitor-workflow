@@ -5,9 +5,9 @@
 run_name: "daily_flood_monitoring_prototype"
 
 ingest:
-  # Step 1 — path to the GloFAS ensemble GRIB for this issue date.
+  # Step 1 — path to the GloFAS ensemble NetCDF forecast file(s) for this issue date.
   # Variables available: {date}, {yyyy}, {mm}, {dd}, {basin_id}
-  forecast_path_template: "data/bronze/glofas/forecast/{date}/glofas_{date}.grib"
+  forecast_path_template: "data/bronze/glofas/forecast/{date}/glofas_{date}.nc"
   download_if_missing: false
   downloader_command_template: null   # reserved for future CDS download hook
 
