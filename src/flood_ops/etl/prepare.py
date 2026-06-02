@@ -1,3 +1,9 @@
+"""Prepare stage for daily flood monitoring ETL.
+
+This module hosts pre-forecast preparation tasks, such as resolving or
+downloading required forecast inputs before extraction and evaluation.
+"""
+
 from __future__ import annotations
 
 from datetime import date
@@ -11,12 +17,6 @@ from .run_spec import PipelineRunSpec
 from .utils import expand_template
 
 logger = get_logger(__name__)
-
-
-"""Step 1 — Prepare:
-- download the GloFAS ensemble forecast files.
-- load OEP thresholds from the provided OEP JSON file.
-"""
 
 
 def prepare():

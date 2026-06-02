@@ -64,6 +64,7 @@ TOTAL_ENSEMBLE_MEMBERS = 51
 # Type alias: unit → lead → member → rp → people
 ImpactCube = Dict[str, Dict[int, Dict[int, Dict[int, float]]]]
 
+
 def forecast(
     extracted: Dict[str, Any],
     issue_date: date,
@@ -73,28 +74,35 @@ def forecast(
     basin_id = str(extracted["basin_id"])
     logger.info("Starting evaluation — basin='%s', issue_date=%s", basin_id, issue_date)
 
-    precomputed_impacts_path = extracted.get("precomputed_impacts_path")
-    if precomputed_impacts_path:
-        precomputed_path = Path(precomputed_impacts_path)
-        if not precomputed_path.exists():
-            raise FileNotFoundError(
-                f"Precomputed impacts file not found: {precomputed_path}"
-            )
-        members, _, impact_cube = _load_precomputed_impacts(precomputed_path)
-        impacts_source = f"precomputed:{precomputed_path}"
-        logger.info("Prototype mode complete — impact cube has %d units", len(impact_cube))
-    else:
-        impact_cube, members, _ = detect_flood_events(
-            forecast_paths=extracted["forecast_paths"],
-            forecast_filename_example=extracted.get("forecast_filename_example"),
-            evt_params_path=extracted["evt_parquet"],
-            oep_json_path=extracted["oep_path"],
-            issue_date=issue_date,
-            basin_id=basin_id,
-            settings=extracted["det"],
-        )
-        impacts_source = "step2_detect:" + ",".join(str(p) for p in extracted["forecast_paths"])
-        logger.info("Detection mode complete — impact cube has %d units", len(impact_cube))
+    # TODO: check if mock case with precomputed_impacts_path needed
+    # precomputed_impacts_path = extracted.get("precomputed_impacts_path")
+    # if precomputed_impacts_path:
+    #     precomputed_path = Path(precomputed_impacts_path)
+    #     if not precomputed_path.exists():
+    #         raise FileNotFoundError(
+    #             f"Precomputed impacts file not found: {precomputed_path}"
+    #         )
+    #     members, _, impact_cube = _load_precomputed_impacts(precomputed_path)
+    #     impacts_source = f"precomputed:{precomputed_path}"
+    #     logger.info("Prototype mode complete — impact cube has %d units", len(impact_cube))
+    # else:
+    lead_days_list = _build_lead_days_list(
+        min_lead=run_spec.decision.min_lead,
+        max_lead=run_spec.decision.max_lead,
+    )
+
+    impact_cube, members, _ = detect_flood_events(
+        forecast_paths=extracted["forecast_paths"],
+        forecast_filename_example=extracted.get("forecast_filename_example"),
+        evt_params_path=extracted["evt_parquet"],
+        oep_json_path=extracted["oep_path"],
+        issue_date=issue_date,
+        basin_id=basin_id,
+        settings=extracted["det"],
+        lead_days_list=lead_days_list,
+    )
+    impacts_source = "step2_detect:" + ",".join(str(p) for p in extracted["forecast_paths"])
+    logger.info("Detection mode complete — impact cube has %d units", len(impact_cube))
 
     prob_exceed = _compute_prob_exceed(impact_cube, extracted["thresholds"], members)
     units: List[UnitDecision] = _apply_tier_rules(
@@ -115,6 +123,21 @@ def forecast(
         "units": units,
         "impacts_source": impacts_source,
     }
+
+
+def _build_lead_days_list(min_lead: int, max_lead: int) -> List[int]:
+    """Build an inclusive lead-day list from decision settings."""
+    min_ld = int(min_lead)
+    max_ld = int(max_lead)
+
+    if min_ld < 1:
+        raise ValueError(f"Invalid lead window: min_lead={min_ld} must be >= 1")
+    if max_ld < min_ld:
+        raise ValueError(
+            f"Invalid lead window: min_lead={min_ld} must be <= max_lead={max_ld}"
+        )
+
+    return list(range(min_ld, max_ld + 1))
 
 
 def _find_latest_persistent_lead(
@@ -642,7 +665,7 @@ def _build_support_grid(evt_params) -> Tuple:
 
 
 # ---------------------------------------------------------------------------
-# Forecast reading utilities  (adapted from NB07 Cell 3 section [C])
+# Forecast reading utilities
 # ---------------------------------------------------------------------------
 
 def _nearest_index_1d(arr_1d, targets):
@@ -750,7 +773,6 @@ def _build_netcdf_index(
 
 def _open_forecast_source(
     forecast_paths: Sequence[Path],
-    forecast_var_name: str,
     forecast_filename_example: Optional[str] = None,
 ):
     """
@@ -766,7 +788,7 @@ def _open_forecast_source(
 
     # Open first file to discover structure
     with xr.open_dataset(forecast_paths[0]) as ds:
-        var_name = str(forecast_var_name or "dis")
+        var_name = "dis"
         if var_name not in ds.data_vars:
             raise RuntimeError(
                 f"Expected NetCDF variable '{var_name}' not found in: {forecast_paths[0]}"
@@ -1140,21 +1162,16 @@ def _load_spatial_resources(settings: "DetectionSettings") -> dict:
     from rasterio.transform import from_bounds
 
     adm3_gdf = gpd.read_file(adm3_geojson).to_crs("EPSG:4326")
-    # Build integer ID → name mapping
+    
     admin_id_to_name: Dict[int, str] = {}
+    expected_name_col = "ADM3_EN"
     name_col = None
     for col in adm3_gdf.columns:
-        if "adm3" in col.lower() and "name" in col.lower():
+        if expected_name_col.lower() in col.lower(): # TODO: to update to adm3_pcode if new oep received
             name_col = col
             break
     if name_col is None:
-        # Fall back to first string column after geometry
-        for col in adm3_gdf.columns:
-            if col != "geometry" and adm3_gdf[col].dtype == object:
-                name_col = col
-                break
-    if name_col is None:
-        raise ValueError("Cannot detect admin name column in ADM3 GeoJSON")
+        raise ValueError(f"Cannot detect admin name column in ADM3 GeoJSON (expected column like {expected_name_col})")
 
     shapes = []
     for idx_row, row in enumerate(adm3_gdf.itertuples(), start=1):

@@ -1,3 +1,8 @@
+"""Save stage for daily flood monitoring ETL.
+
+This module serializes basin decisions and optional map products for
+downstream systems and reporting workflows.
+"""
 
 from __future__ import annotations
 
@@ -13,11 +18,6 @@ from .run_spec import PipelineRunSpec
 from .utils import BasinRunOutput, expand_template
 
 logger = get_logger(__name__)
-
-
-"""
-Step 6 — Output: serialise trigger decisions for downstream systems.
-"""
 
 
 _CSV_FIELDS = [

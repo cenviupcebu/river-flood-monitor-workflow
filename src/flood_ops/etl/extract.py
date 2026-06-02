@@ -1,3 +1,9 @@
+"""Extract stage for daily flood monitoring ETL.
+
+This module prepares basin-level inputs for forecasting by resolving forecast
+NetCDF file paths and loading OEP thresholds from configured sources.
+"""
+
 from __future__ import annotations
 
 from datetime import date
@@ -12,13 +18,6 @@ from .run_spec import PipelineRunSpec
 from .utils import expand_template
 
 logger = get_logger(__name__)
-
-
-"""
-Extract:
-- download the GloFAS ensemble forecast files.
-- load OEP thresholds from the provided OEP JSON file.
-"""
 
 
 def extract(
@@ -114,7 +113,7 @@ def _load_oep_thresholds(
     oep_min: float,
 ) -> Dict[str, Dict[int, float]]:
     """
-    Load per-unit OEP impact thresholds from the NB05 JSON.
+    Load per-unit OEP impact thresholds from JSON.
 
     Units whose RP2 threshold is below ``oep_min`` are excluded.
 

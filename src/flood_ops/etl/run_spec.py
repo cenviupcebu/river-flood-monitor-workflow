@@ -44,7 +44,7 @@ class IngestSettings:
 
 @dataclass
 class DetectionSettings:
-    """Hyper-parameters for the Step 2 NB07 detection algorithm."""
+    """Hyper-parameters for the Step 2 detection algorithm."""
 
     # Discharge → RP threshold: cell is "active" when RP >= t0_years
     t0_years: float = 2.0
