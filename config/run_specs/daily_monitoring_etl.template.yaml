@@ -12,7 +12,7 @@ ingest:
   downloader_command_template: null   # reserved for future CDS download hook
 
 inputs:
-  # Step 4 — OEP thresholds produced by NB05.
+  # Step 4 — OEP thresholds produced by NB05. # TODO: clean NB reference
   oep_json: "data/silver/risk_profiles/oep_curves_all_units.json"
 
 detection:
@@ -24,7 +24,7 @@ detection:
   total_ensemble_members: 51
 
 decision:
-  # Step 5 — activation rules (from NB07 Cell 14)
+  # Step 5 — activation rules (from NB07 Cell 14)  # TODO: clean NB reference
   persist_days: 2     # consecutive qualifying lead-days required
   min_lead: 5         # earliest operational lead (days before predicted peak)
   oep_min: 100        # exclude units with OEP_RP2 < 100 (no exposure model)

@@ -1,8 +1,4 @@
-# Prototype run-spec for the daily flood monitoring ETL.
-#
-# Copy this file to daily_monitoring_etl.yaml and fill in the real data paths.
-
-run_name: "daily_flood_monitoring_prototype"
+run_name: "daily_flood_monitoring"
 
 ingest:
   # Step 1 — path to the GloFAS ensemble NetCDF forecast files for this issue date.
@@ -12,11 +8,11 @@ ingest:
   downloader_command_template: null   # reserved for future CDS download hook
 
 inputs:
-  # Step 4 — OEP thresholds produced by NB05.
-  oep_json: "data/silver/risk_profiles/oep_curves_all_units.json"
+  # Step 4 — OEP thresholds produced by NB05.  # TODO: clean NB reference
+  oep_json: "data/silver/risk_profiles/oep_curves_all_units_Cagayan_Pcodes.json"  # TODO: move to config
 
 detection:
-  # ── NB07 algorithm hyper-parameters ──────────────────────────────────────
+  # ── NB07 algorithm hyper-parameters ──────────────────────────────────────  # TODO: clean NB reference
   # Discharge RP threshold: a GloFAS cell is "active" when RP >= t0_years
   t0_years: 2.0
   # Minimum contiguous flood patch area (km²) to qualify a member as a flood member
@@ -42,12 +38,14 @@ detection:
   # WorldPop population raster (GeoTIFF, EPSG:4326)
   worldpop_tif: "data/bronze/population/phl_ppp_2020.tif"
   # ADM3 municipality boundaries (GeoJSON or Shapefile, EPSG:4326)
-  adm3_geojson: "data/admin-areas/PHL_adm3.json"
+  adm3_geojson: "data/admin-areas/phl_admin3.geojson"
+  # ADM3 attribute used as unit key across detection/save joins
+  adm3_unit_column: "adm3_pcode"
 
 decision:
-  # Step 5 — activation rules (from NB07 Cell 14)
+  # Step 5 — activation rules (from NB07 Cell 14)  # TODO: clean NB reference
   persist_days: 2     # consecutive qualifying lead-days required
-  max_lead: 7         # latest operational lead
+  max_lead: 5        # latest operational lead
   min_lead: 1         # earliest operational lead
   oep_min: 100        # exclude units with OEP_RP2 < 100 (no exposure model)
   rule_tiers:

@@ -47,13 +47,14 @@ def extract(
 
     # load OEP file path
     oep_path = Path(expand_template(run_spec.inputs.oep_json, issue_date, basin_id))
-    thresholds = _load_oep_thresholds(oep_path, run_spec.decision.oep_min)
+    thresholds, unit_metadata = _load_oep_thresholds(oep_path, run_spec.decision.oep_min)
 
     return {
         "basin_id": basin_id,
         "forecast_paths": forecast_paths,
         "oep_path": oep_path,
         "thresholds": thresholds,
+        "unit_metadata": unit_metadata,
         "evt_parquet": evt_parquet,
         "det": det,
     }
@@ -111,7 +112,7 @@ def _resolve_forecast_path(
 def _load_oep_thresholds(
     oep_json_path: Path,
     oep_min: float,
-) -> Dict[str, Dict[int, float]]:
+) -> tuple[Dict[str, Dict[int, float]], Dict[str, Dict[str, str]]]:
     """
     Load per-unit OEP impact thresholds from JSON.
 
@@ -119,8 +120,8 @@ def _load_oep_thresholds(
 
     Returns
     -------
-    dict
-        ``{unit_id: {rp: threshold_people}}``
+    tuple
+        ``({unit_id: {rp: threshold_people}}, {unit_id: {level, name, pcode}})``
     """
     logger.info(
         "Loading OEP thresholds from %s (oep_min=%.0f)", oep_json_path, oep_min
@@ -132,10 +133,12 @@ def _load_oep_thresholds(
     rp_report = [int(float(x)) for x in raw.get("rp_report", [])]
 
     thresholds: Dict[str, Dict[int, float]] = {}
+    unit_metadata: Dict[str, Dict[str, str]] = {}
     for rec in raw.get("units", []):
-        unit = rec.get("unit")
-        if not unit:
+        pcode = rec.get("pcode")
+        if not pcode:
             continue
+        unit_id = f"ADM3::{str(pcode)}"
         oep_rl = rec.get("oep_rl", [])
         rp_map: Dict[int, float] = {}
         for idx, rp in enumerate(rp_report):
@@ -146,7 +149,12 @@ def _load_oep_thresholds(
             except (TypeError, ValueError):
                 continue
         if rp_map.get(2, 0.0) >= oep_min:
-            thresholds[str(unit)] = rp_map
+            thresholds[unit_id] = rp_map
+            unit_metadata[unit_id] = {
+                "level": str(rec.get("level", "") or "").strip(),
+                "name": str(rec.get("name", "") or "").strip(),
+                "pcode": str(pcode).strip(),
+            }
 
     logger.info(
         "OEP thresholds loaded: %d qualifying units (from %d total, oep_min=%.0f)",
@@ -154,4 +162,4 @@ def _load_oep_thresholds(
         len(raw.get("units", [])),
         oep_min,
     )
-    return thresholds
+    return thresholds, unit_metadata

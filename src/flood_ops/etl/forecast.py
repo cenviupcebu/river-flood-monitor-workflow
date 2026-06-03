@@ -108,6 +108,7 @@ def forecast(
     units: List[UnitDecision] = _apply_tier_rules(
         prob_exceed,
         extracted["thresholds"],
+        extracted.get("unit_metadata", {}),
         run_spec.decision,
     )
 
@@ -171,6 +172,7 @@ def _find_latest_persistent_lead(
 def _apply_tier_rules(
     prob_exceed: Dict[str, Dict[int, Dict[int, float]]],
     thresholds: Dict[str, Dict[int, float]],
+    unit_metadata: Dict[str, Dict[str, str]],
     decision: DecisionSettings,
 ) -> List[UnitDecision]:
     """Evaluate all tier rules across all units.
@@ -234,7 +236,16 @@ def _apply_tier_rules(
                     impact_threshold_people=thresholds.get(unit_id, {}).get(rule.rp),
                 )
             )
-        units.append(UnitDecision(unit_id=unit_id, tiers=tier_results))
+        meta = unit_metadata.get(unit_id, {})
+        units.append(
+            UnitDecision(
+                unit_id=unit_id,
+                level=str(meta.get("level", "") or ""),
+                name=str(meta.get("name", "") or ""),
+                pcode=str(meta.get("pcode", "") or ""),
+                tiers=tier_results,
+            )
+        )
 
     logger.info(
         "Tier evaluation complete: %d units, %d tier decisions fired",
@@ -919,7 +930,7 @@ def _detect_flood_patches_for_lead(
             )
             if q_vals is None:
                 continue
-            q_vals = q_vals * 1000  # TODO: temporary mock multiplier for trigger testing.
+            q_vals = q_vals * 100  # TODO: temporary mock multiplier for trigger testing.
             rp = discharge_to_return_period(
                 q_vals[None, :], u, sigma, xi, lam
             ).ravel()
@@ -1164,14 +1175,14 @@ def _load_spatial_resources(settings: "DetectionSettings") -> dict:
     adm3_gdf = gpd.read_file(adm3_geojson).to_crs("EPSG:4326")
     
     admin_id_to_name: Dict[int, str] = {}
-    expected_name_col = "ADM3_EN"
+    expected_name_col = str(settings.adm3_unit_column)
     name_col = None
     for col in adm3_gdf.columns:
-        if expected_name_col.lower() in col.lower(): # TODO: to update to adm3_pcode if new oep received
+        if expected_name_col.lower() in col.lower():
             name_col = col
             break
     if name_col is None:
-        raise ValueError(f"Cannot detect admin name column in ADM3 GeoJSON (expected column like {expected_name_col})")
+        raise ValueError(f"Cannot detect ADM3 PCODE column in ADM3 GeoJSON (expected column like {expected_name_col})")
 
     shapes = []
     for idx_row, row in enumerate(adm3_gdf.itertuples(), start=1):
@@ -1300,7 +1311,11 @@ def detect_flood_events(
     # --- Read unit names from OEP JSON (to initialise ImpactCube) -----------
     import json as _json
     oep_raw = _json.loads(Path(oep_json_path).read_text(encoding="utf-8"))
-    unit_names: List[str] = [r["unit"] for r in oep_raw.get("units", [])]
+    unit_names: List[str] = []
+    for rec in oep_raw.get("units", []):
+        pcode = rec.get("pcode")
+        if pcode:
+            unit_names.append(_unit_key(str(pcode)))
 
     # --- Open forecast source (.nc/.nc4) -----------------------------------
     if isinstance(forecast_paths, str):
@@ -1318,7 +1333,7 @@ def detect_flood_events(
     try:
         forecast_src, forecast_index, forecast_lat1d, forecast_lon1d = _open_forecast_source(
             forecast_paths,
-            settings.forecast_var_name,
+            # settings.forecast_var_name,
             forecast_filename_example=forecast_filename_example,
         )
     except RuntimeError as exc:
@@ -1399,7 +1414,7 @@ def detect_flood_events(
                     )
                     if q_vals is None:
                         continue
-                    q_vals = q_vals * 1000  # TODO: temporary mock multiplier for trigger testing.
+                    q_vals = q_vals * 100  # TODO: temporary mock multiplier for trigger testing.
 
                     q_snapshot = pd.Series(q_vals, index=basin_cells)
                     depth_raster = patch_dir_path / (

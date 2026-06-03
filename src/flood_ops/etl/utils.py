@@ -63,6 +63,9 @@ class UnitDecision:
 
     unit_id: str
     tiers: List[TierDecision]
+    level: str = ""
+    name: str = ""
+    pcode: str = ""
 
 
 @dataclass

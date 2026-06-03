@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import csv
 import json
-import unicodedata
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -23,7 +22,9 @@ logger = get_logger(__name__)
 _CSV_FIELDS = [
     "issue_date",
     "basin_id",
-    "unit_id",
+    "level",
+    "name",
+    "pcode",
     "tier",
     "rp",
     "p_threshold",
@@ -84,6 +85,9 @@ def _serialise_basin(result: BasinRunOutput) -> Dict[str, Any]:
         "units": [
             {
                 "unit_id": unit.unit_id,
+                "level": unit.level,
+                "name": unit.name,
+                "pcode": unit.pcode,
                 "tiers": [
                     {
                         "tier": tier.tier,
@@ -100,13 +104,6 @@ def _serialise_basin(result: BasinRunOutput) -> Dict[str, Any]:
             for unit in result.units
         ],
     }
-
-
-def _normalise_admin_name(name: str) -> str:
-    """Normalise admin names for robust matching across data sources."""
-    cleaned = unicodedata.normalize("NFKD", name)
-    ascii_only = "".join(ch for ch in cleaned if not unicodedata.combining(ch))
-    return " ".join(ascii_only.strip().lower().split())
 
 
 def _plot_maps(
@@ -146,10 +143,12 @@ def _plot_maps(
         return []
 
     fired_df["fire_lead"] = fired_df["fire_lead"].astype(int)
-    fired_df["unit_name"] = (
-        fired_df["unit_id"].astype(str).str.replace(r"^ADM3::", "", regex=True)
-    )
-    fired_df["unit_name_norm"] = fired_df["unit_name"].map(_normalise_admin_name)
+    fired_df = fired_df.loc[fired_df["level"].astype(str).str.upper() == "ADM3"].copy()
+    if fired_df.empty:
+        logger.info("Skipping map plotting: no ADM3 activated rows in CSV")
+        return []
+
+    fired_df["pcode"] = fired_df["pcode"].astype(str).str.strip()
 
     tier_rank = {"T1": 1, "T2": 2, "T3": 3}
     tier_colors = {"T1": "#FFD54F", "T2": "#FB8C00", "T3": "#D32F2F"}
@@ -158,27 +157,26 @@ def _plot_maps(
     # Select one tier per unit (highest activated tier) for each basin and lead.
     fired_df = (
         fired_df.sort_values("tier_rank")
-        .groupby(["basin_id", "fire_lead", "unit_name_norm"], as_index=False)
+        .groupby(["basin_id", "fire_lead", "pcode"], as_index=False)
         .last()
     )
 
     adm3_gdf = gpd.read_file(adm3_geojson_path)
-    name_col = None
+    expected_unit_col = "adm3_pcode"
+    pcode_col = None
     for col in adm3_gdf.columns:
-        if "adm3_en" in col.lower():
-            name_col = col
+        if expected_unit_col.lower() in col.lower():
+            pcode_col = col
             break
-    if name_col is None:
+    if pcode_col is None:
         raise ValueError(
-            "Cannot detect admin name column in ADM3 GeoJSON "
-            "(expected column like ADM3_EN)"
+            "Cannot detect admin unit column in ADM3 GeoJSON "
+            f"(expected column like {expected_unit_col})"
         )
 
-    admin_gdf = adm3_gdf[[name_col, "geometry"]].copy()
-    admin_gdf = admin_gdf.rename(columns={name_col: "adm3_en"})
-    admin_gdf["unit_name_norm"] = admin_gdf["adm3_en"].astype(str).map(
-        _normalise_admin_name
-    )
+    admin_gdf = adm3_gdf[[pcode_col, "geometry"]].copy()
+    admin_gdf = admin_gdf.rename(columns={pcode_col: "adm3_pcode"})
+    admin_gdf["adm3_pcode"] = admin_gdf["adm3_pcode"].astype(str).str.strip()
 
     map_dir = output_dir / "maps"
     map_dir.mkdir(parents=True, exist_ok=True)
@@ -186,14 +184,14 @@ def _plot_maps(
 
     # Plot one map for each basin and activated lead day.
     for (basin_id, fire_lead), lead_rows in fired_df.groupby(["basin_id", "fire_lead"]):
-        basin_rows = df.loc[df["basin_id"] == basin_id].copy()
-        basin_rows["unit_name"] = (
-            basin_rows["unit_id"].astype(str).str.replace(r"^ADM3::", "", regex=True)
-        )
-        basin_rows["unit_name_norm"] = basin_rows["unit_name"].map(_normalise_admin_name)
+        basin_rows = df.loc[
+            (df["basin_id"] == basin_id)
+            & (df["level"].astype(str).str.upper() == "ADM3")
+        ].copy()
+        basin_rows["pcode"] = basin_rows["pcode"].astype(str).str.strip()
 
-        basin_units = basin_rows["unit_name_norm"].dropna().unique().tolist()
-        basin_gdf = admin_gdf.loc[admin_gdf["unit_name_norm"].isin(basin_units)].copy()
+        basin_units = basin_rows["pcode"].dropna().unique().tolist()
+        basin_gdf = admin_gdf.loc[admin_gdf["adm3_pcode"].isin(basin_units)].copy()
         if basin_gdf.empty:
             logger.warning(
                 "Skipping map for basin=%s lead=%s: no admin geometry matched",
@@ -203,8 +201,9 @@ def _plot_maps(
             continue
 
         merged = basin_gdf.merge(
-            lead_rows[["unit_name_norm", "tier"]],
-            on="unit_name_norm",
+            lead_rows[["pcode", "tier"]],
+            left_on="adm3_pcode",
+            right_on="pcode",
             how="left",
         )
         merged["color"] = merged["tier"].map(tier_colors)
@@ -305,7 +304,9 @@ def _write_outputs(
                             {
                                 "issue_date": basin.issue_date,
                                 "basin_id": basin.basin_id,
-                                "unit_id": unit.unit_id,
+                                "level": unit.level,
+                                "name": unit.name,
+                                "pcode": unit.pcode,
                                 "tier": tier.tier,
                                 "rp": tier.rp,
                                 "p_threshold": tier.p_threshold,

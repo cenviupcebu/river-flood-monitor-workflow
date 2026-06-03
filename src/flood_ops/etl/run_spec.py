@@ -67,6 +67,8 @@ class DetectionSettings:
     jrc_root: str = ""
     worldpop_tif: str = ""
     adm3_geojson: str = ""
+    # ADM3 attribute used as unit key across ETL stages (e.g., adm3_en or adm3_pcode)
+    adm3_unit_column: str = "adm3_pcode"
 
 
 @dataclass
@@ -162,6 +164,7 @@ def load_run_spec(path: str) -> PipelineRunSpec:
         jrc_root=str(detection_cfg.get("jrc_root", "")),
         worldpop_tif=str(detection_cfg.get("worldpop_tif", "")),
         adm3_geojson=str(detection_cfg.get("adm3_geojson", "")),
+        adm3_unit_column=str(detection_cfg.get("adm3_unit_column", "adm3_pcode")),
     )
 
     rules_raw = decision_cfg.get("rule_tiers") or DEFAULT_RULE_TIERS
