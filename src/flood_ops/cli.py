@@ -17,6 +17,10 @@ def main(
     issue_date: str = "",
     basin_files: List[str] | None = None,
     run_spec: str = "",
+    do_prepare: bool = False,
+    do_extract: bool = False,
+    do_forecast: bool = False,
+    do_save: bool = False,
 ) -> int:
     """Callable from both the console-script entry point and direct imports."""
     if not issue_date or basin_files is None or not run_spec:
@@ -24,17 +28,25 @@ def main(
         parser = argparse.ArgumentParser(
             description="Run daily ETL flood trigger for specified basins",
         )
-        parser.add_argument("--date", required=True, default=date.today().isoformat(), help="Issue date (YYYY-MM-DD)")
         parser.add_argument(
             "--run-spec", required=True, help="Path to ETL run-spec YAML"
         )
         parser.add_argument(
             "--basins", required=True, nargs="+", help="One or more basin YAML config files"
         )
+        parser.add_argument("--date", required=False, default=date.today().isoformat(), help="Issue date (YYYY-MM-DD)")
+        parser.add_argument("--prepare", action="store_true", help="Run prepare step")
+        parser.add_argument("--extract", action="store_true", help="Run extract step")
+        parser.add_argument("--forecast", action="store_true", help="Run forecast step")
+        parser.add_argument("--save", action="store_true", help="Run save step")
         args = parser.parse_args()
         issue_date = args.date
         basin_files = args.basins
         run_spec = args.run_spec
+        do_prepare = bool(args.prepare)
+        do_extract = bool(args.extract)
+        do_forecast = bool(args.forecast)
+        do_save = bool(args.save)
 
     try:
         issue = date.fromisoformat(issue_date)
@@ -47,26 +59,42 @@ def main(
             issue_date=issue,
             basin_config_files=basin_files,
             run_spec_path=run_spec,
+            do_prepare=do_prepare,
+            do_extract=do_extract,
+            do_forecast=do_forecast,
+            do_save=do_save,
         )
     except Exception as exc:
         logger.exception("Daily ETL run failed: %s", exc)
         return 1
 
-    total_units = sum(len(b.units) for b in results)
-    total_fired = sum(
-        1
-        for basin in results
-        for unit in basin.units
-        for tier in unit.tiers
-        if tier.fired
-    )
-    logger.info(
-        "Daily ETL complete: %d basins, %d units, %d fired tier decisions. Output: %s",
-        len(results),
-        total_units,
-        total_fired,
-        output_file,
-    )
+    selected_any = any([do_prepare, do_extract, do_forecast, do_save])
+    if not selected_any or do_save:
+        total_units = sum(len(b.units) for b in results)
+        total_fired = sum(
+            1
+            for basin in results
+            for unit in basin.units
+            for tier in unit.tiers
+            if tier.fired
+        )
+        logger.info(
+            "Daily ETL complete: %d basins, %d units, %d fired tier decisions. Output: %s",
+            len(results),
+            total_units,
+            total_fired,
+            output_file,
+        )
+    else:
+        logger.info(
+            "Daily ETL complete without save output. Steps run: "
+            "prepare=%s extract=%s forecast=%s save=%s",
+            do_prepare,
+            do_extract,
+            do_forecast,
+            do_save,
+        )
+
     return 0
 
 
