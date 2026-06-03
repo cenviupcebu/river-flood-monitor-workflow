@@ -43,15 +43,30 @@ For cross-platform bootstrap helpers that also install Python and `cfgrib`:
 
 ### 3. Run the workflow
 
+The workflow is running as the following steps in order:
+- Prepare
+- Extract
+- Forecast
+- Save
+
 #### Option 1: Run the CLI tool
 
+For full workflow run:
 ```bash
 uv run flood-monitoring `
-    --date 2026-05-15 `
     --run-spec config/run_specs/daily_monitoring_etl.yaml `
     --basins config/basins/Cagayan_01.yaml
 ```
 
+The workflow also supports modular execution through stepIf only specific steps (prepare, extract, forecast, or save) need to be executed instead of rerunning the full pipeline each time. Intermediate artifacts are cached by run name and issue date, which lets downstream steps resume from prior successful outputs for faster debugging and iteration. In practice, this ihelpful when debugging a certain and reduces turnaround time when you are validating logic changes, especially for expensive upstream steps.
+
+This can be done by adding flags `--<step>`s to the cli.
+```bash
+uv run flood-monitoring `
+    --run-spec config/run_specs/daily_monitoring_etl.yaml `
+    --basins config/basins/Cagayan_01.yaml
+    --prepare
+```
 #### Option 2: Run Jupyter notebook
 
 ```bash
@@ -77,8 +92,7 @@ river-flood-workflow/
 │   │   └── Cagayan_01.yaml
 │   └── run_specs/
 │       ├── daily_monitoring_etl.yaml
-│       ├── daily_monitoring_etl.template.yaml
-│       └── precomputed_impacts.example.json
+│       └── daily_monitoring_etl.template.yaml
 │
 ├── data/
 │   ├── admin-areas/
