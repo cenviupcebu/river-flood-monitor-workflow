@@ -19,7 +19,7 @@ DEFAULT_RULE_TIERS: Dict[str, Dict[str, Any]] = {
 def expand_template(
     template: str,
     issue_date: date,
-    basin_id: Optional[str] = None,
+    basin: Optional[str] = None,
     ens_no: Optional[str] = None,
     ens: Optional[str] = None,
 ) -> str:
@@ -29,7 +29,7 @@ def expand_template(
     - {date}: YYYY-MM-DD
     - {yyyymmdd}: YYYYMMDD
     - {yyyy}, {mm}, {dd}
-    - {basin_id}
+    - {basin}: basin name (e.g., "cagayan")
     - {ens_no}, {ens}
     """
     return template.format(
@@ -38,7 +38,7 @@ def expand_template(
         yyyy=issue_date.strftime("%Y"),
         mm=issue_date.strftime("%m"),
         dd=issue_date.strftime("%d"),
-        basin_id=basin_id or "",
+        basin=basin or "",
         ens_no=ens_no if ens_no is not None else "00",
         ens=ens if ens is not None else "00",
     )

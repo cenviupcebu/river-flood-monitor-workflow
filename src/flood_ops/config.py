@@ -18,6 +18,7 @@ class BasinConfig:
     """Minimal basin metadata needed by the ETL orchestration."""
 
     basin_id: str
+    basin_name: str  # lowercase basin name (e.g., "cagayan")
 
 
 def resolve_basin_names_to_paths(basin_names: List[str], basins_dir: str = "config/basins") -> List[str]:
@@ -71,4 +72,7 @@ def load_basin_config(path: str) -> BasinConfig:
     if not basin_id:
         raise ValueError(f"Missing required 'basin_id' in {config_path}")
 
-    return BasinConfig(basin_id=basin_id)
+    # Extract basin name from file path (e.g., "cagayan" from "cagayan_basin.yaml")
+    basin_name = config_path.stem.replace("_basin", "").lower()
+
+    return BasinConfig(basin_id=basin_id, basin_name=basin_name)

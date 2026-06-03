@@ -43,10 +43,10 @@ def extract(
         )
 
     det = run_spec.detection
-    evt_parquet = Path(expand_template(det.evt_params_parquet, issue_date, basin_id))
+    evt_parquet = Path(expand_template(det.evt_params_parquet, issue_date, basin=config.basin_name))
 
     # load OEP file path
-    oep_path = Path(expand_template(run_spec.inputs.oep_json, issue_date, basin_id))
+    oep_path = Path(expand_template(run_spec.inputs.oep_json, issue_date, basin=config.basin_name))
     thresholds, unit_metadata = _load_oep_thresholds(oep_path, run_spec.decision.oep_min)
 
     return {
@@ -86,7 +86,7 @@ def _resolve_forecast_path(
         # Support templates using a fixed member token like dis_00_YYYYMMDD00.nc.
         template_for_lookup = re.sub(r"([_-])00(?=[_-])", r"\1*", template, count=1)
 
-    candidate = Path(expand_template(template_for_lookup, issue_date, basin_id))
+    candidate = Path(expand_template(template_for_lookup, issue_date))
 
     if has_ens_placeholder or template_for_lookup != template:
         logger.info("Checking forecast file pattern: %s", candidate)
