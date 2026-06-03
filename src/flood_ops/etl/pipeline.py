@@ -42,7 +42,7 @@ def run_daily_monitoring_etl(
 
     If no step flags are enabled, all steps run in order. When an upstream
     step is skipped, this function attempts to load the required artifacts
-    from ``data/intermediate/etl_step_cache/<run_name>/<issue_date>/``.
+    from ``data/etl_step_cache/<run_name>/<issue_date>/``.
     """
     if not any([do_prepare, do_extract, do_forecast, do_save]):
         do_prepare = True
@@ -167,7 +167,7 @@ def run_daily_monitoring_etl(
 
 
 def _artifact_root(run_name: str, issue_date: date) -> Path:
-    return Path("data/intermediate/etl_step_cache") / run_name / issue_date.isoformat()
+    return Path("data/etl_step_cache") / run_name / issue_date.isoformat()
 
 
 def _run_manifest_path(artifact_root: Path) -> Path:

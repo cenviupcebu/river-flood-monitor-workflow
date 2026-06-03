@@ -55,17 +55,24 @@ For full workflow run:
 ```bash
 uv run flood-monitoring `
     --run-spec config/run_specs/daily_monitoring_etl.yaml `
-    --basins config/basins/Cagayan_01.yaml
+    --basins cagayan
 ```
 
-The workflow also supports modular execution through stepIf only specific steps (prepare, extract, forecast, or save) need to be executed instead of rerunning the full pipeline each time. Intermediate artifacts are cached by run name and issue date, which lets downstream steps resume from prior successful outputs for faster debugging and iteration. In practice, this ihelpful when debugging a certain and reduces turnaround time when you are validating logic changes, especially for expensive upstream steps.
+The workflow also supports modular execution. If only specific steps (prepare, extract, forecast, or save) need to be executed instead of rerunning the full pipeline each time. Intermediate artifacts are cached by run name and issue date, which lets downstream steps resume from prior successful outputs for faster debugging and iteration. In practice, this is helpful when debugging a certain step and reduces turnaround time when you are validating logic changes, especially for expensive upstream steps.
 
-This can be done by adding flags `--<step>`s to the cli.
+This can be done by adding flags `--<step>` to the cli.
 ```bash
 uv run flood-monitoring `
     --run-spec config/run_specs/daily_monitoring_etl.yaml `
-    --basins config/basins/Cagayan_01.yaml
+    --basins cagayan `
     --prepare
+```
+
+You can also run multiple basins at once:
+```bash
+uv run flood-monitoring `
+    --run-spec config/run_specs/daily_monitoring_etl.yaml `
+    --basins cagayan abra ilocos
 ```
 #### Option 2: Run Jupyter notebook
 

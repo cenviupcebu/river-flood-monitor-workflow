@@ -7,6 +7,7 @@ from datetime import date
 import sys
 from typing import List
 
+from flood_ops.config import resolve_basin_names_to_paths, ALLOWED_BASINS
 from flood_ops.etl.pipeline import run_daily_monitoring_etl
 from flood_ops.logging import get_logger
 
@@ -32,7 +33,7 @@ def main(
             "--run-spec", required=True, help="Path to ETL run-spec YAML"
         )
         parser.add_argument(
-            "--basins", required=True, nargs="+", help="One or more basin YAML config files"
+            "--basins", required=True, nargs="+", help=f"One or more basin names. Allowed: {', '.join(ALLOWED_BASINS)}"
         )
         parser.add_argument("--date", required=False, default=date.today().isoformat(), help="Issue date (YYYY-MM-DD)")
         parser.add_argument("--prepare", action="store_true", help="Run prepare step")
@@ -41,7 +42,8 @@ def main(
         parser.add_argument("--save", action="store_true", help="Run save step")
         args = parser.parse_args()
         issue_date = args.date
-        basin_files = args.basins
+        basin_names = args.basins
+        basin_files = resolve_basin_names_to_paths(basin_names)
         run_spec = args.run_spec
         do_prepare = bool(args.prepare)
         do_extract = bool(args.extract)

@@ -9,7 +9,19 @@ ingest:
 
 inputs:
   # Step 4 — OEP thresholds produced by NB05.  # TODO: clean NB reference
-  oep_json: "data/silver/risk_profiles/oep_curves_all_units_Cagayan_Pcodes.json"  # TODO: move to config
+  oep_json: "config/risk_profiles/{basin}_oep_curves_all_units.json"
+  # basin configuration
+  basin_config: "config/basin/{basin}_basin.yaml"
+  # NB01 EVT calibration output (Parquet with GPD fits per GloFAS cell)
+  evt_params_parquet: "config/risk_profiles/{basin}_evt_pot_calibration.parquet"
+  # JRC Global Flood Hazard Map root (subdirectories with RP-labelled TIFFs)
+  jrc_root: "data/bronze/jrc_flood_maps"
+  # WorldPop population raster (GeoTIFF, EPSG:4326)
+  worldpop_tif: "data/bronze/population/phl_ppp_2020.tif"
+  # ADM3 municipality boundaries (GeoJSON or Shapefile, EPSG:4326)
+  adm3_geojson: "data/admin-areas/phl_admin3.geojson"
+  # ADM3 attribute used as unit key across detection/save joins
+  adm3_unit_column: "adm3_pcode"
 
 detection:
   # ── NB07 algorithm hyper-parameters ──────────────────────────────────────  # TODO: clean NB reference
@@ -29,18 +41,6 @@ detection:
   rp_cap: 500.0
   # Expected number of ensemble members in the forecast files
   total_ensemble_members: 51
-
-  # ── Spatial data paths (required for detection mode) ─────────────────────
-  # NB01 EVT calibration output (Parquet with GPD fits per GloFAS cell)
-  evt_params_parquet: "data/silver/risk_profiles/evt_pot_calibration - Cagayan.parquet"
-  # JRC Global Flood Hazard Map root (subdirectories with RP-labelled TIFFs)
-  jrc_root: "data/bronze/jrc_flood_maps"
-  # WorldPop population raster (GeoTIFF, EPSG:4326)
-  worldpop_tif: "data/bronze/population/phl_ppp_2020.tif"
-  # ADM3 municipality boundaries (GeoJSON or Shapefile, EPSG:4326)
-  adm3_geojson: "data/admin-areas/phl_admin3.geojson"
-  # ADM3 attribute used as unit key across detection/save joins
-  adm3_unit_column: "adm3_pcode"
 
 decision:
   # Step 5 — activation rules (from NB07 Cell 14)  # TODO: clean NB reference
