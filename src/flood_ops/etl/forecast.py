@@ -1,4 +1,18 @@
-"""Step 4 — Evaluate: compute ensemble probability of exceeding OEP thresholds."""
+"""Flood monitoring forecast stage: detect, impact, evaluate, and decide.
+
+This module implements the forecasting pipeline used by the ETL run:
+
+Detect: read GloFAS ensemble NetCDF files, convert discharge to return periods
+    with EVT1 parameters, detect spatial flood patches using connected
+    components, and render per-patch depth rasters from JRC maps.
+Impact: aggregate affected population per admin unit from event patch rasters
+    and WorldPop, producing an ImpactCube
+    (unit -> lead -> member -> rp -> affected_people).
+Evaluate: compute ensemble exceedance probabilities against per-unit OEP
+    impact thresholds.
+Decide: apply configured tier rules with persistence and minimum-lead
+    constraints to produce unit-level alert decisions.
+"""
 
 from __future__ import annotations
 
@@ -22,37 +36,6 @@ from .utils import TierDecision, UnitDecision
 
 from flood_ops.logging import get_logger
 logger = get_logger(__name__)
-
-"""Step 2 — Detect: spatial flood event detection from a GloFAS ensemble.
-
-Implements the NB07 detection algorithm (cells 3-10):
-
-1. Load EVT1 GPD fits from ``evt_pot_calibration.parquet`` (NB01 output).
-2. For each ensemble member x lead time, extract discharge from forecast NetCDF files,
-   compute per-cell return periods, run 8-neighbour connected-component
-   labelling, and filter out patches smaller than ``A_MIN_KM2``.
-3. For flood-triggering members, run the full JRC+WorldPop impact pipeline
-   (NB04-style) to compute people affected per admin unit per RP.
-4. Return an ``ImpactCube`` compatible with ``step3_impact`` / ``step4_evaluate``.
-
-References
-----------
-NB07 ``07_Trigger_Validation_Reforecast.ipynb`` — cells 3-10 (reference impl.)
-"""
-"""Step 3 — Impact: compute population affected per member/lead/unit.
-
-This module provides:
-
-1) ``compute_impacts_from_event_patches`` for operational mode. It calls
-    ``philflood.models.impact.population_exposure.aggregate_affected_population``
-    on each event patch detected in Step 2 using the patch depth raster and
-    WorldPop grid.
-2) ``load_precomputed_impacts`` as a compatibility bridge for prototype mode
-    where impacts are pre-exported to JSON.
-"""
-"""Step 4 — Evaluate: compute ensemble probability of exceeding OEP thresholds."""
-
-"""Step 5 — Decide: apply tier rules with persistence and minimum-lead constraints."""
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +229,7 @@ def _apply_tier_rules(
 
 @dataclass
 class EventPatchImpactInput:
-    """Input payload for one Step 2 event patch passed to Step 3.
+    """Input payload.
 
     Parameters
     ----------
@@ -257,7 +240,7 @@ class EventPatchImpactInput:
     rp:
         Return period bucket that this patch contributes to.
     depth_raster:
-        Path to the flood depth raster for this patch (NB02-style output).
+        Path to the flood depth raster for this patch.
     event_id:
         Optional patch/event identifier used for traceability.
     extra:
@@ -284,7 +267,7 @@ def _unit_key(unit_name: str) -> str:
 def _normalise_aggregated_rows(result: Any) -> Dict[str, float]:
     """Normalise aggregator output to {unit_key: affected_people}.
 
-    Supports dict-like and dataframe-like outputs to keep Step 3 tolerant to
+    Supports dict-like and dataframe-like outputs to keep the impact phase tolerant to
     implementation differences across philflood versions.
     """
     out: Dict[str, float] = {}
@@ -590,7 +573,7 @@ def _load_precomputed_impacts(
     return members, leads, cube
 
 # ---------------------------------------------------------------------------
-# EVT1 GPD helpers  (extracted from NB07 Cell 3)
+# EVT1 GPD helpers
 # ---------------------------------------------------------------------------
 
 def _gpd_exceedance_rate(
@@ -618,7 +601,7 @@ def discharge_to_return_period(q, u, sigma, xi, lam, rp_cap: float = _RP_CAP):
 
 
 # ---------------------------------------------------------------------------
-# Spatial helpers  (extracted from NB07 Cell 3)
+# Spatial helpers
 # ---------------------------------------------------------------------------
 
 def _parse_cell_coords(cell_id: str) -> Tuple[float, float]:
@@ -859,7 +842,7 @@ def _read_forecast_snapshot(
 
 
 # ---------------------------------------------------------------------------
-# Connected-component flood detection  (NB07 Cell 3 detect_flood_members)
+# Connected-component flood detection
 # ---------------------------------------------------------------------------
 
 def _detect_flood_patches_for_lead(
@@ -914,7 +897,7 @@ def _detect_flood_patches_for_lead(
             )
             if q_vals is None:
                 continue
-            q_vals = q_vals * 100  # TODO: temporary mock multiplier for trigger testing.
+            q_vals = q_vals * 10  # TODO: temporary mock multiplier for trigger testing.
             rp = discharge_to_return_period(
                 q_vals[None, :], u, sigma, xi, lam
             ).ravel()
@@ -1205,9 +1188,9 @@ def detect_flood_events(
     issue_date: date,
     basin_name: str,
     settings: "DetectionSettings",
-    lead_days_list: Optional[List[int]] = None,
+    lead_days_list: Optional[List[int]],
 ) -> Tuple[ImpactCube, List[int], List[int]]:
-    """Run the NB07 spatial flood-event detection algorithm.
+    """Run the spatial flood-event detection algorithm.
 
     Parameters
     ----------
@@ -1216,9 +1199,9 @@ def detect_flood_events(
         When multiple files are provided (for example one per ensemble member),
         they are concatenated along a synthetic member dimension.
     evt_params_path:
-        Path to ``evt_pot_calibration.parquet`` (NB01 output).
+        Path to ``evt_pot_calibration.parquet``.
     oep_json_path:
-        Path to ``oep_curves_all_units.json`` (NB05 output) — used to
+        Path to ``oep_curves_all_units.json`` — used to
         read unit names for the impact cube.
     issue_date:
         Forecast initialisation date.
@@ -1227,7 +1210,7 @@ def detect_flood_events(
     settings:
         Detection hyper-parameters (t0_years, a_min_km2, etc.).
     lead_days_list:
-        Lead times to evaluate (days). Defaults to 1–15.
+        Lead times to evaluate (days)
 
     Returns
     -------
@@ -1235,11 +1218,9 @@ def detect_flood_events(
         *impact_cube* is a nested dict compatible with
         ``step3_impact.ImpactCube``.
     """
-    if lead_days_list is None:
-        lead_days_list = list(range(1, 16))
 
     logger.info(
-        "Step 2 detect_flood_events — basin='%s', issue_date=%s, "
+        "Detect phase (detect_flood_events) — basin='%s', issue_date=%s, "
         "leads=%s, t0_years=%.1f, a_min_km2=%.0f",
         basin_name, issue_date, lead_days_list,
         settings.t0_years, settings.a_min_km2,
@@ -1260,7 +1241,6 @@ def detect_flood_events(
         "lambda_events_per_year": "lam",
         "gpd_xi": "xi",
         "gpd_sigma": "sigma",
-        "gpd_scale_sigma": "sigma", #TODO: check duplicate sigma origin
     }
     evt_params = evt_raw.rename(
         columns={k: v for k, v in _col_map.items() if k in evt_raw.columns}
@@ -1398,7 +1378,7 @@ def detect_flood_events(
                     )
                     if q_vals is None:
                         continue
-                    q_vals = q_vals * 100  # TODO: temporary mock multiplier for trigger testing.
+                    q_vals = q_vals * 10  # TODO: temporary mock multiplier for trigger testing.
 
                     q_snapshot = pd.Series(q_vals, index=basin_cells)
                     depth_raster = patch_dir_path / (
@@ -1460,7 +1440,7 @@ def detect_flood_events(
                         dst_rp.setdefault(int(rp), 0.0)
 
     logger.info(
-        "Step 2 complete — %d units, %d lead days, %d members",
+        "Detect phase complete — %d units, %d lead days, %d members",
         len(impact_cube), len(lead_days_list), len(all_members),
     )
     return impact_cube, all_members, lead_days_list
