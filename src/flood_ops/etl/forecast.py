@@ -589,7 +589,17 @@ def _gpd_exceedance_rate(
     near0 = np.isclose(xi, 0.0)
     surv = np.empty_like(y)
     surv[near0] = np.exp(-y[near0])
-    surv[~near0] = np.power(1.0 + xi[~near0] * y[~near0], -1.0 / xi[~near0])
+    non0 = ~near0
+    xi_non0 = xi[non0]
+    y_non0 = y[non0]
+    base = 1.0 + xi_non0 * y_non0
+
+    # For xi < 0, values with 1 + xi*y <= 0 are outside GPD support and have
+    # zero survival probability; avoid invalid power on non-positive bases.
+    surv_non0 = np.zeros_like(base)
+    valid = base > 0.0
+    surv_non0[valid] = np.power(base[valid], -1.0 / xi_non0[valid])
+    surv[non0] = surv_non0
     return np.clip(lam * surv, 1e-12, None)
 
 
