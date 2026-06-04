@@ -15,8 +15,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from flood_ops.config import load_basin_config
 from flood_ops.logging import get_logger, setup_pipeline_file_log
 
-from .run_spec import load_run_spec
 from .prepare import prepare
+from .run_spec import load_run_spec
 from .extract import extract
 from .forecast import forecast
 from .save import save
@@ -52,10 +52,8 @@ def run_daily_monitoring_etl(
 
     run_spec = load_run_spec(run_spec_path)
 
-    # TODO: use logs directory from run_spec.output when available
-    log_dir_template = "logs"
-    if run_spec.output is not None:
-        log_dir_template = getattr(run_spec.output, "log_dir_template", "logs")
+    if run_spec.output.log_dir_template.strip():
+        log_dir_template = run_spec.output.log_dir_template
     log_file = setup_pipeline_file_log(
         log_dir=Path(expand_template(log_dir_template, issue_date)),
         run_name=run_spec.run_name,
