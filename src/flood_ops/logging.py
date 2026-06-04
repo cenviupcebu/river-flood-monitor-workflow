@@ -13,6 +13,27 @@ from datetime import datetime
 from pathlib import Path
 
 
+LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(major)-10s | %(subfunc)-28s | %(message)s"
+LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+def _major_from_logger_name(logger_name: str) -> str:
+    return logger_name.rsplit(".", 1)[-1]
+
+
+class PipelineFormatter(logging.Formatter):
+    """Adds derived logging context fields used by the flood-ops format."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        record.major = _major_from_logger_name(record.name)
+        record.subfunc = f"{record.funcName}:{record.lineno}"
+        return super().format(record)
+
+
+def _build_formatter() -> logging.Formatter:
+    return PipelineFormatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
+
+
 def setup_logging(log_level: str = "INFO") -> None:
     """Initialise the flood_ops logger tree with a console handler."""
     root_logger = logging.getLogger("flood_ops")
@@ -24,12 +45,7 @@ def setup_logging(log_level: str = "INFO") -> None:
 
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s | %(levelname)-8s | %(name)s.%(funcName)s:%(lineno)d | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-    )
+    console_handler.setFormatter(_build_formatter())
     root_logger.addHandler(console_handler)
 
 
@@ -61,12 +77,7 @@ def setup_pipeline_file_log(
 
     handler = logging.FileHandler(log_file, encoding="utf-8")
     handler.setLevel(logging._nameToLevel.get(log_level.upper(), logging.DEBUG))
-    handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s | %(levelname)-8s | %(name)s.%(funcName)s:%(lineno)d | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-    )
+    handler.setFormatter(_build_formatter())
     root.addHandler(handler)
 
     def _cleanup() -> None:
