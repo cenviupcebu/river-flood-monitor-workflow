@@ -3,7 +3,6 @@
 Module layout
 -------------
 pipeline.py               Orchestration entry points for daily ETL runs.
-pipeline_step_flags.py    Optional step-level execution flags for selective runs.
 run_spec.py               PipelineRunSpec settings dataclasses and YAML loader.
 prepare.py                Input preparation helpers (forecast acquisition scaffolding).
 extract.py                Basin input extraction and threshold loading.
