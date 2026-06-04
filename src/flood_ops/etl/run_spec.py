@@ -35,7 +35,7 @@ class DecisionSettings:
 
 @dataclass
 class IngestSettings:
-    """Forecast file location settings for Step 1."""
+    """Forecast file location settings for Extract"""
 
     forecast_path_template: str
     download_if_missing: bool = False
@@ -44,7 +44,7 @@ class IngestSettings:
 
 @dataclass
 class DetectionSettings:
-    """Hyper-parameters for the Step 2 detection algorithm."""
+    """Hyper-parameters for the Forecast's detection algorithm."""
 
     # Discharge → RP threshold: cell is "active" when RP >= t0_years
     t0_years: float = 2.0
@@ -73,7 +73,7 @@ class DetectionSettings:
 
 @dataclass
 class InputSettings:
-    """Required data paths consumed in Steps 3-4."""
+    """Required data paths consumed in Forecast."""
 
     oep_json: str
     evt_params_parquet: str = ""
@@ -81,7 +81,7 @@ class InputSettings:
 
 @dataclass
 class OutputSettings:
-    """Output location and format for Step 6."""
+    """Output location and format for Save."""
 
     output_dir_template: str
     format: str = "json"
