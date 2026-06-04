@@ -1,30 +1,27 @@
 run_name: "daily_flood_monitoring"
 
 ingest:
-  # Step 1 — path to the GloFAS ensemble NetCDF forecast files for this issue date.
-  # Variables available: {date}, {yyyymmdd}, {yyyy}, {mm}, {dd}, {basin_id}, {ens_no}
+  # Path to the GloFAS ensemble NetCDF forecast files for this issue date.
   forecast_path_template: "data/bronze/glofas/forecast/dis_{ens_no}_{yyyymmdd}00.nc"
   download_if_missing: false
-  downloader_command_template: null   # reserved for future CDS download hook
 
 inputs:
-  # Step 4 — OEP thresholds produced by NB05.  # TODO: clean NB reference
+  # OEP risk curves (thresholds)
   oep_json: "config/risk_profiles/{basin}_oep_curves_all_units.json"
   # basin configuration
   basin_config: "config/basin/{basin}_basin.yaml"
-  # NB01 EVT calibration output (Parquet with GPD fits per GloFAS cell)
+  # EVT calibration output (Parquet with GPD fits per GloFAS cell)
   evt_params_parquet: "config/risk_profiles/{basin}_evt_pot_calibration.parquet"
   # JRC Global Flood Hazard Map root (subdirectories with RP-labelled TIFFs)
   jrc_root: "data/bronze/jrc_flood_maps"
   # WorldPop population raster (GeoTIFF, EPSG:4326)
   worldpop_tif: "data/bronze/population/phl_ppp_2020.tif"
-  # ADM3 municipality boundaries (GeoJSON or Shapefile, EPSG:4326)
+  # Municipality (administrative level 3 - adm3) boundaries (GeoJSON or Shapefile, EPSG:4326)
   adm3_geojson: "data/admin-areas/phl_admin3.geojson"
-  # ADM3 attribute used as unit key across detection/save joins
+  # ADM3 column name in the OEP JSON and adm3_geojson files
   adm3_unit_column: "adm3_pcode"
 
-detection:
-  # ── NB07 algorithm hyper-parameters ──────────────────────────────────────  # TODO: clean NB reference
+detection:   # Detection algorithm hyper-parameters
   # Discharge RP threshold: a GloFAS cell is "active" when RP >= t0_years
   t0_years: 2.0
   # Minimum contiguous flood patch area (km²) to qualify a member as a flood member
@@ -43,10 +40,10 @@ detection:
   total_ensemble_members: 51
 
 decision:
-  # Step 5 — activation rules (from NB07 Cell 14)  # TODO: clean NB reference
+  # Activation rules
   persist_days: 2     # consecutive qualifying lead-days required
-  max_lead: 5        # latest operational lead
-  min_lead: 1         # earliest operational lead
+  max_lead: 5         # latest operational lead day
+  min_lead: 1         # earliest operational lead day
   oep_min: 100        # exclude units with OEP_RP2 < 100 (no exposure model)
   rule_tiers:
     T1:
@@ -66,7 +63,7 @@ decision:
       label: "Very High Activation"
 
 output:
-  # Step 6 — where to write trigger decisions.
+  # Directory to write trigger decisions.
   output_dir_template: "data/gold/trigger_decisions/{date}"
   format: "csv"   # "json" or "csv"
   # Log files: logs/{yyyy}/{mm}/<run_name>_<datetime>.txt

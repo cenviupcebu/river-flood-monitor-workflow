@@ -1,21 +1,39 @@
-# Prototype run-spec for the daily flood monitoring ETL.
-#
-# Copy this file to daily_monitoring_etl.yaml and fill in the real data paths.
+# Copy this file to daily_monitoring_etl.yaml and fill in the input data paths.
 
-run_name: "daily_flood_monitoring_prototype"
+run_name: "daily_flood_monitoring"
 
 ingest:
-  # Step 1 — path to the GloFAS ensemble NetCDF forecast file(s) for this issue date.
-  # Variables available: {date}, {yyyy}, {mm}, {dd}, {basin_id}
-  forecast_path_template: "data/bronze/glofas/forecast/{date}/glofas_{date}.nc"
+  # Path to the GloFAS ensemble NetCDF forecast files for this issue date.
+  forecast_path_template: "data/bronze/glofas/forecast/dis_{ens_no}_{yyyymmdd}00.nc"
   download_if_missing: false
-  downloader_command_template: null   # reserved for future CDS download hook
 
 inputs:
-  # Step 4 — OEP thresholds produced by NB05. # TODO: clean NB reference
-  oep_json: "data/silver/risk_profiles/oep_curves_all_units.json"
+  # OEP risk curves (thresholds)
+  oep_json: "config/risk_profiles/{basin}_<filename>.json"
+  # basin configuration
+  basin_config: "config/basin/{basin}_<filename>.yaml"
+  # EVT calibration output (Parquet with GPD fits per GloFAS cell)
+  evt_params_parquet: "config/risk_profiles/{basin}_<filename>.parquet"
+  # JRC Global Flood Hazard Map root (subdirectories with RP-labelled TIFFs)
+  jrc_root: "data/bronze/jrc_flood_maps"
+  # WorldPop population raster (GeoTIFF, EPSG:4326)
+  worldpop_tif: "data/bronze/population/<filename>.tif"
+  # Municipality (administrative level 3 - adm3) boundaries (GeoJSON or Shapefile, EPSG:4326)
+  adm3_geojson: "data/admin-areas/<filename>.geojson"
+  # ADM3 column name in the OEP JSON and adm3_geojson files
+  adm3_unit_column: "adm3_pcode"
 
-detection:
+detection:   # Detection algorithm hyper-parameters
+  # Discharge RP threshold: a GloFAS cell is "active" when RP >= t0_years
+  t0_years: 2.0
+  # Minimum contiguous flood patch area (km²) to qualify a member as a flood member
+  a_min_km2: 100.0
+  # Flood depth (metres) for counting affected population (WorldPop)
+  depth_threshold_m: 0.02
+  # 8-neighbour (Moore=2) or 4-neighbour (von Neumann=1) connectivity
+  cc_connectivity: 2
+  # NetCDF variable name for discharge
+  forecast_var_name: "dis"
   # Return periods to compute in impact space (drives tier thresholds)
   flood_detect_rps: [2, 5, 10, 20]
   # Maximum return period used when converting discharge to RP
@@ -24,9 +42,10 @@ detection:
   total_ensemble_members: 51
 
 decision:
-  # Step 5 — activation rules (from NB07 Cell 14)  # TODO: clean NB reference
+  # Activation rules
   persist_days: 2     # consecutive qualifying lead-days required
-  min_lead: 5         # earliest operational lead (days before predicted peak)
+  max_lead: 5         # latest operational lead day
+  min_lead: 1         # earliest operational lead day
   oep_min: 100        # exclude units with OEP_RP2 < 100 (no exposure model)
   rule_tiers:
     T1:
@@ -46,8 +65,8 @@ decision:
       label: "Very High Activation"
 
 output:
-  # Step 6 — where to write trigger decisions.
+  # Directory to write trigger decisions.
   output_dir_template: "data/gold/trigger_decisions/{date}"
-  format: "json"   # or "csv"
+  format: "csv"   # "json" or "csv"
   # Log files: logs/{yyyy}/{mm}/<run_name>_<datetime>.txt
   log_dir_template: "logs/{yyyy}/{mm}"
