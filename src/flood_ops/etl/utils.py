@@ -72,7 +72,7 @@ class UnitDecision:
 class BasinRunOutput:
     """Result payload for one basin for one issue date."""
 
-    basin_id: str
+    basin_name: str
     issue_date: str
     forecast_paths: List[str]
     units: List[UnitDecision]

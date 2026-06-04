@@ -21,7 +21,7 @@ logger = get_logger(__name__)
 
 _CSV_FIELDS = [
     "issue_date",
-    "basin_id",
+    "basin_name",
     "level",
     "name",
     "pcode",
@@ -64,7 +64,7 @@ def save(
 
         basin_results.append(
             BasinRunOutput(
-                basin_id=str(basin["basin_id"]),
+                basin_name=str(basin["basin_name"]),
                 issue_date=issue_date.isoformat(),
                 forecast_paths=basin["forecast_paths"],
                 units=basin["units"],
@@ -78,7 +78,7 @@ def save(
 
 def _serialise_basin(result: BasinRunOutput) -> Dict[str, Any]:
     return {
-        "basin_id": result.basin_id,
+        "basin_name": result.basin_name,
         "issue_date": result.issue_date,
         "forecast_paths": result.forecast_paths,
         "metadata": result.metadata,
@@ -157,7 +157,7 @@ def _plot_maps(
     # Select one tier per unit (highest activated tier) for each basin and lead.
     fired_df = (
         fired_df.sort_values("tier_rank")
-        .groupby(["basin_id", "fire_lead", "pcode"], as_index=False)
+        .groupby(["basin_name", "fire_lead", "pcode"], as_index=False)
         .last()
     )
 
@@ -183,9 +183,9 @@ def _plot_maps(
     map_paths: List[Path] = []
 
     # Plot one map for each basin and activated lead day.
-    for (basin_id, fire_lead), lead_rows in fired_df.groupby(["basin_id", "fire_lead"]):
+    for (basin_name, fire_lead), lead_rows in fired_df.groupby(["basin_name", "fire_lead"]):
         basin_rows = df.loc[
-            (df["basin_id"] == basin_id)
+            (df["basin_name"] == basin_name)
             & (df["level"].astype(str).str.upper() == "ADM3")
         ].copy()
         basin_rows["pcode"] = basin_rows["pcode"].astype(str).str.strip()
@@ -195,7 +195,7 @@ def _plot_maps(
         if basin_gdf.empty:
             logger.warning(
                 "Skipping map for basin=%s lead=%s: no admin geometry matched",
-                basin_id,
+                basin_name,
                 fire_lead,
             )
             continue
@@ -219,7 +219,7 @@ def _plot_maps(
                 tier_gdf.plot(ax=ax, color=color, edgecolor="#333333", linewidth=0.5)
 
         ax.set_axis_off()
-        ax.set_title(f"{basin_id} | activated alerts at lead day {fire_lead}")
+        ax.set_title(f"{basin_name} | activated alerts at lead day {fire_lead}")
 
         legend_handles = [
             plt.Line2D(
@@ -259,7 +259,7 @@ def _plot_maps(
         ]
         ax.legend(handles=legend_handles, loc="lower left", frameon=True)
 
-        map_file = map_dir / f"{basin_id}_lead{fire_lead}_activated_map.png"
+        map_file = map_dir / f"{basin_name}_lead{fire_lead}_activated_map.png"
         fig.tight_layout()
         fig.savefig(map_file, dpi=150, bbox_inches="tight")
         plt.close(fig)
@@ -303,7 +303,7 @@ def _write_outputs(
                         writer.writerow(
                             {
                                 "issue_date": basin.issue_date,
-                                "basin_id": basin.basin_id,
+                                "basin_name": basin.basin_name,
                                 "level": unit.level,
                                 "name": unit.name,
                                 "pcode": unit.pcode,

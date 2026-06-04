@@ -7,7 +7,7 @@ from datetime import date
 import sys
 from typing import List
 
-from flood_ops.config import resolve_basin_names_to_paths, ALLOWED_BASINS
+from flood_ops.config import normalize_basin_names, ALLOWED_BASINS
 from flood_ops.etl.pipeline import run_daily_monitoring_etl
 from flood_ops.logging import get_logger
 
@@ -16,7 +16,7 @@ logger = get_logger(__name__)
 
 def main(
     issue_date: str = "",
-    basin_files: List[str] | None = None,
+    basin_names: List[str] | None = None,
     run_spec: str = "",
     do_prepare: bool = False,
     do_extract: bool = False,
@@ -24,7 +24,7 @@ def main(
     do_save: bool = False,
 ) -> int:
     """Callable from both the console-script entry point and direct imports."""
-    if not issue_date or basin_files is None or not run_spec:
+    if not issue_date or basin_names is None or not run_spec:
         # Called with no args — parse from sys.argv
         parser = argparse.ArgumentParser(
             description="Run daily ETL flood trigger for specified basins",
@@ -42,13 +42,14 @@ def main(
         parser.add_argument("--save", action="store_true", help="Run save step")
         args = parser.parse_args()
         issue_date = args.date
-        basin_names = args.basins
-        basin_files = resolve_basin_names_to_paths(basin_names)
+        basin_names = normalize_basin_names(args.basins)
         run_spec = args.run_spec
         do_prepare = bool(args.prepare)
         do_extract = bool(args.extract)
         do_forecast = bool(args.forecast)
         do_save = bool(args.save)
+    else:
+        basin_names = normalize_basin_names(basin_names)
 
     try:
         issue = date.fromisoformat(issue_date)
@@ -59,7 +60,7 @@ def main(
     try:
         results, output_file = run_daily_monitoring_etl(
             issue_date=issue,
-            basin_config_files=basin_files,
+            basin_names=basin_names,
             run_spec_path=run_spec,
             do_prepare=do_prepare,
             do_extract=do_extract,

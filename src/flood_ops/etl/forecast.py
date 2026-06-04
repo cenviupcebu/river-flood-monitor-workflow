@@ -72,21 +72,9 @@ def forecast(
     run_spec: PipelineRunSpec,
 ) -> Dict[str, Any]:
     """Run flood detection, exceedance, and alert rule evaluation."""
-    basin_id = str(extracted["basin_id"])
-    logger.info("Starting evaluation — basin='%s', issue_date=%s", basin_id, issue_date)
+    basin_name = str(extracted["basin_name"])
+    logger.info("Starting evaluation — basin='%s', issue_date=%s", basin_name, issue_date)
 
-    # TODO: check if mock case with precomputed_impacts_path needed
-    # precomputed_impacts_path = extracted.get("precomputed_impacts_path")
-    # if precomputed_impacts_path:
-    #     precomputed_path = Path(precomputed_impacts_path)
-    #     if not precomputed_path.exists():
-    #         raise FileNotFoundError(
-    #             f"Precomputed impacts file not found: {precomputed_path}"
-    #         )
-    #     members, _, impact_cube = _load_precomputed_impacts(precomputed_path)
-    #     impacts_source = f"precomputed:{precomputed_path}"
-    #     logger.info("Prototype mode complete — impact cube has %d units", len(impact_cube))
-    # else:
     lead_days_list = _build_lead_days_list(
         min_lead=run_spec.decision.min_lead,
         max_lead=run_spec.decision.max_lead,
@@ -98,7 +86,7 @@ def forecast(
         evt_params_path=extracted["evt_parquet"],
         oep_json_path=extracted["oep_path"],
         issue_date=issue_date,
-        basin_id=basin_id,
+        basin_name=basin_name,
         settings=extracted["det"],
         lead_days_list=lead_days_list,
     )
@@ -115,11 +103,11 @@ def forecast(
 
     logger.info(
         "Evaluation complete — basin='%s', %d units evaluated",
-        basin_id,
+        basin_name,
         len(units),
     )
     return {
-        "basin_id": basin_id,
+        "basin_name": basin_name,
         "forecast_paths": extracted["forecast_paths"],
         "oep_path": extracted["oep_path"],
         "units": units,
@@ -1215,7 +1203,7 @@ def detect_flood_events(
     evt_params_path: Path,
     oep_json_path: Path,
     issue_date: date,
-    basin_id: str,
+    basin_name: str,
     settings: "DetectionSettings",
     lead_days_list: Optional[List[int]] = None,
 ) -> Tuple[ImpactCube, List[int], List[int]]:
@@ -1234,8 +1222,8 @@ def detect_flood_events(
         read unit names for the impact cube.
     issue_date:
         Forecast initialisation date.
-    basin_id:
-        Basin identifier (for logging).
+    basin_name:
+        Basin name (for logging).
     settings:
         Detection hyper-parameters (t0_years, a_min_km2, etc.).
     lead_days_list:
@@ -1253,7 +1241,7 @@ def detect_flood_events(
     logger.info(
         "Step 2 detect_flood_events — basin='%s', issue_date=%s, "
         "leads=%s, t0_years=%.1f, a_min_km2=%.0f",
-        basin_id, issue_date, lead_days_list,
+        basin_name, issue_date, lead_days_list,
         settings.t0_years, settings.a_min_km2,
     )
 
@@ -1290,7 +1278,7 @@ def detect_flood_events(
         evt_params["lon"] = [v[1] for v in ll]
 
     basin_cells = evt_params["cell_id"].astype(str).tolist()
-    logger.info("EVT1 params loaded: %d cells for basin '%s'", len(basin_cells), basin_id)
+    logger.info("EVT1 params loaded: %d cells for basin '%s'", len(basin_cells), basin_name)
 
     # --- Build support grid --------------------------------------------------
     lat_vals, lon_vals, grid_index, area_grid, _, _ = _build_support_grid(evt_params)
@@ -1359,7 +1347,7 @@ def detect_flood_events(
     impact_cube: ImpactCube = {}
 
     # --- Main loop: per lead time -------------------------------------------
-    with tempfile.TemporaryDirectory(prefix=f"step3_patch_{basin_id}_") as patch_dir:
+    with tempfile.TemporaryDirectory(prefix=f"step3_patch_{basin_name}_") as patch_dir:
         patch_dir_path = Path(patch_dir)
         for lead_days in lead_days_list:
             lead_window = pd.date_range(
@@ -1414,7 +1402,7 @@ def detect_flood_events(
 
                     q_snapshot = pd.Series(q_vals, index=basin_cells)
                     depth_raster = patch_dir_path / (
-                        f"{basin_id}_lead{lead_days:02d}_m{member:03d}_patch{patch_idx:03d}.tif"
+                        f"{basin_name}_lead{lead_days:02d}_m{member:03d}_patch{patch_idx:03d}.tif"
                     )
                     ok = _render_depth_raster_for_patch(
                         discharge_per_cell=q_snapshot,
@@ -1428,7 +1416,7 @@ def detect_flood_events(
                         continue
 
                     patch_event_id = (
-                        f"{basin_id}_lead{lead_days:02d}_m{member:03d}_patch{patch_idx:03d}"
+                        f"{basin_name}_lead{lead_days:02d}_m{member:03d}_patch{patch_idx:03d}"
                     )
                     for rp in settings.flood_detect_rps:
                         lead_patch_inputs.append(

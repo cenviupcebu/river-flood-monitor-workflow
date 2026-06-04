@@ -15,7 +15,7 @@ extract-example.py        Example extraction helpers for experimentation.
 Public API
 ----------
 >>> from flood_ops.etl import run_daily_monitoring_etl
->>> results, out_file = run_daily_monitoring_etl(issue_date, basin_files, run_spec_path)
+>>> results, out_file = run_daily_monitoring_etl(issue_date, basin_names, run_spec_path)
 """
 
 from .run_spec import PipelineRunSpec, load_run_spec

@@ -28,8 +28,8 @@ def extract(
     """
     Prepare basin inputs required for the forecast step.
     """
-    basin_id = config.basin_id
-    logger.info("Processing basin '%s'", basin_id)
+    basin_name = config.basin_name
+    logger.info("Processing basin '%s'", basin_name)
 
     if run_spec.inputs is None:
         raise ValueError("Run spec must define inputs.oep_json")
@@ -38,22 +38,22 @@ def extract(
     forecast_paths = _resolve_forecast_path(run_spec, issue_date)
     if not forecast_paths:
         raise FileNotFoundError(
-            f"Forecast file not available for basin '{basin_id}' on {issue_date}. "
+            f"Forecast file not available for basin '{basin_name}' on {issue_date}. "
             "Supply a forecast file via ingest settings."
         )
 
     # load EVT parameters Parquet path
     evt_template = str(run_spec.inputs.evt_params_parquet).strip()
-    evt_parquet = Path(expand_template(evt_template, issue_date, basin=config.basin_name))
+    evt_parquet = Path(expand_template(evt_template, issue_date, basin=basin_name))
     # load OEP file path
     oep_template = str(run_spec.inputs.oep_json).strip()
-    oep_path = Path(expand_template(oep_template, issue_date, basin=config.basin_name))
+    oep_path = Path(expand_template(oep_template, issue_date, basin=basin_name))
     thresholds, unit_metadata = _load_oep_thresholds(oep_path, run_spec.decision.oep_min)
 
     det = run_spec.detection
 
     return {
-        "basin_id": basin_id,
+        "basin_name": basin_name,
         "forecast_paths": forecast_paths,
         "oep_path": oep_path,
         "thresholds": thresholds,

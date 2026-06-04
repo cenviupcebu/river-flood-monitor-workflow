@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from flood_ops.config import load_basin_config
+from flood_ops.config import BasinConfig, build_basin_configs
 from flood_ops.logging import get_logger, setup_pipeline_file_log
 
 from .prepare import prepare
@@ -28,7 +28,7 @@ logger = get_logger(__name__)
 
 def run_daily_monitoring_etl(
     issue_date: date,
-    basin_config_files: List[str],
+    basin_names: List[str],
     run_spec_path: str,
     do_prepare: bool = False,
     do_extract: bool = False,
@@ -64,7 +64,7 @@ def run_daily_monitoring_etl(
         "steps=[prepare=%s, extract=%s, forecast=%s, save=%s], log=%s",
         run_spec.run_name,
         issue_date,
-        len(basin_config_files),
+        len(basin_names),
         do_prepare,
         do_extract,
         do_forecast,
@@ -79,7 +79,7 @@ def run_daily_monitoring_etl(
         artifact_root=artifact_root,
         run_name=run_spec.run_name,
         issue_date=issue_date,
-        basin_config_files=basin_config_files,
+        basin_names=basin_names,
         run_spec_path=run_spec_path,
         selected_steps={
             "prepare": do_prepare,
@@ -102,10 +102,10 @@ def run_daily_monitoring_etl(
 
     extracted_by_basin: Dict[str, Dict[str, Any]] = {}
     forecast_by_basin: Dict[str, Dict[str, Any]] = {}
+    basin_configs: List[BasinConfig] = build_basin_configs(basin_names)
 
-    for cfg_path in basin_config_files:
-        cfg = load_basin_config(cfg_path)
-        basin_id = cfg.basin_id
+    for cfg in basin_configs:
+        basin_name = cfg.basin_name
 
         if do_extract:
             extracted = extract(
@@ -113,22 +113,20 @@ def run_daily_monitoring_etl(
                 issue_date=issue_date,
                 run_spec=run_spec,
             )
-            _write_extract_artifact(artifact_root, basin_id, extracted)
-            extracted_by_basin[basin_id] = extracted
+            _write_extract_artifact(artifact_root, basin_name, extracted)
+            extracted_by_basin[basin_name] = extracted
         elif do_forecast:
-            extracted_by_basin[basin_id] = _read_extract_artifact(artifact_root, basin_id)
+            extracted_by_basin[basin_name] = _read_extract_artifact(artifact_root, basin_name)
 
         if do_forecast:
-            forecasted = forecast(extracted_by_basin[basin_id], issue_date, run_spec)
-            _write_forecast_artifact(artifact_root, basin_id, forecasted)
-            forecast_by_basin[basin_id] = forecasted
+            forecasted = forecast(extracted_by_basin[basin_name], issue_date, run_spec)
+            _write_forecast_artifact(artifact_root, basin_name, forecasted)
+            forecast_by_basin[basin_name] = forecasted
         elif do_save:
-            forecast_by_basin[basin_id] = _read_forecast_artifact(artifact_root, basin_id)
+            forecast_by_basin[basin_name] = _read_forecast_artifact(artifact_root, basin_name)
 
     if do_save:
-        basin_forecasts = [
-            forecast_by_basin[load_basin_config(p).basin_id] for p in basin_config_files
-        ]
+        basin_forecasts = [forecast_by_basin[cfg.basin_name] for cfg in basin_configs]
         basin_results, output_file = save(run_spec, issue_date, basin_forecasts)
 
         total_fired = sum(
@@ -176,19 +174,19 @@ def _prepare_marker_path(artifact_root: Path) -> Path:
     return artifact_root / "prepare.done.json"
 
 
-def _extract_artifact_path(artifact_root: Path, basin_id: str) -> Path:
-    return artifact_root / "extract" / f"{basin_id}.json"
+def _extract_artifact_path(artifact_root: Path, basin_name: str) -> Path:
+    return artifact_root / "extract" / f"{basin_name}.json"
 
 
-def _forecast_artifact_path(artifact_root: Path, basin_id: str) -> Path:
-    return artifact_root / "forecast" / f"{basin_id}.json"
+def _forecast_artifact_path(artifact_root: Path, basin_name: str) -> Path:
+    return artifact_root / "forecast" / f"{basin_name}.json"
 
 
 def _write_run_manifest(
     artifact_root: Path,
     run_name: str,
     issue_date: date,
-    basin_config_files: List[str],
+    basin_names: List[str],
     run_spec_path: str,
     selected_steps: Dict[str, bool],
 ) -> None:
@@ -197,7 +195,7 @@ def _write_run_manifest(
         "run_name": run_name,
         "issue_date": issue_date.isoformat(),
         "run_spec_path": run_spec_path,
-        "basin_config_files": basin_config_files,
+        "basin_names": basin_names,
         "selected_steps": selected_steps,
         "generated_at_utc": datetime.utcnow().isoformat() + "Z",
     }
@@ -217,15 +215,15 @@ def _write_prepare_marker(artifact_root: Path) -> None:
 
 def _write_extract_artifact(
     artifact_root: Path,
-    basin_id: str,
+    basin_name: str,
     extracted: Dict[str, Any],
 ) -> None:
-    path = _extract_artifact_path(artifact_root, basin_id)
+    path = _extract_artifact_path(artifact_root, basin_name)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     payload = {
         "schema_version": 1,
-        "basin_id": str(extracted["basin_id"]),
+        "basin_name": str(extracted["basin_name"]),
         "forecast_paths": [str(p) for p in extracted.get("forecast_paths") or []],
         "forecast_filename_example": extracted.get("forecast_filename_example"),
         "oep_path": _to_optional_str(extracted.get("oep_path")),
@@ -238,11 +236,11 @@ def _write_extract_artifact(
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def _read_extract_artifact(artifact_root: Path, basin_id: str) -> Dict[str, Any]:
-    path = _extract_artifact_path(artifact_root, basin_id)
+def _read_extract_artifact(artifact_root: Path, basin_name: str) -> Dict[str, Any]:
+    path = _extract_artifact_path(artifact_root, basin_name)
     if not path.exists():
         raise FileNotFoundError(
-            f"Extract artifact not found for basin '{basin_id}': {path}. "
+            f"Extract artifact not found for basin '{basin_name}': {path}. "
             "Run with --extract first."
         )
 
@@ -265,7 +263,7 @@ def _read_extract_artifact(artifact_root: Path, basin_id: str) -> Dict[str, Any]
     )
 
     return {
-        "basin_id": str(raw["basin_id"]),
+        "basin_name": str(raw["basin_name"]),
         "forecast_paths": [str(p) for p in raw.get("forecast_paths") or []],
         "forecast_filename_example": raw.get("forecast_filename_example"),
         "oep_path": Path(raw["oep_path"]),
@@ -278,15 +276,15 @@ def _read_extract_artifact(artifact_root: Path, basin_id: str) -> Dict[str, Any]
 
 def _write_forecast_artifact(
     artifact_root: Path,
-    basin_id: str,
+    basin_name: str,
     forecasted: Dict[str, Any],
 ) -> None:
-    path = _forecast_artifact_path(artifact_root, basin_id)
+    path = _forecast_artifact_path(artifact_root, basin_name)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     payload = {
         "schema_version": 1,
-        "basin_id": str(forecasted["basin_id"]),
+        "basin_name": str(forecasted["basin_name"]),
         "forecast_paths": [str(p) for p in forecasted.get("forecast_paths") or []],
         "oep_path": _to_optional_str(forecasted.get("oep_path")),
         "impacts_source": str(forecasted.get("impacts_source", "")),
@@ -296,17 +294,17 @@ def _write_forecast_artifact(
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def _read_forecast_artifact(artifact_root: Path, basin_id: str) -> Dict[str, Any]:
-    path = _forecast_artifact_path(artifact_root, basin_id)
+def _read_forecast_artifact(artifact_root: Path, basin_name: str) -> Dict[str, Any]:
+    path = _forecast_artifact_path(artifact_root, basin_name)
     if not path.exists():
         raise FileNotFoundError(
-            f"Forecast artifact not found for basin '{basin_id}': {path}. "
+            f"Forecast artifact not found for basin '{basin_name}': {path}. "
             "Run with --forecast first."
         )
 
     raw = json.loads(path.read_text(encoding="utf-8"))
     return {
-        "basin_id": str(raw["basin_id"]),
+        "basin_name": str(raw["basin_name"]),
         "forecast_paths": [str(p) for p in raw.get("forecast_paths") or []],
         "oep_path": Path(raw["oep_path"]),
         "impacts_source": str(raw.get("impacts_source", "")),
