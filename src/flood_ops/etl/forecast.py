@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, Iterable
 import re
 import tempfile
+from functools import lru_cache
 from contextlib import ExitStack
 import numbers
 from dataclasses import dataclass, field
@@ -383,6 +384,12 @@ def _read_raster_array(path: str) -> Tuple[np.ndarray, Any, Any]:
     return arr, transform, crs
 
 
+@lru_cache(maxsize=4)
+def _read_static_raster_array_cached(path: str) -> Tuple[np.ndarray, Any, Any]:
+    """Read and cache static rasters reused across many event patches."""
+    return _read_raster_array(path)
+
+
 def _reproject_depth_to_worldpop(
     src_arr: np.ndarray,
     src_transform: Any,
@@ -409,27 +416,22 @@ def _reproject_depth_to_worldpop(
     return out
 
 
-def _aggregate_affected_population_compat(**kwargs: Any) -> pd.DataFrame:
-    """Internal compatibility replacement for philflood population exposure."""
-    depth_raster = (
-        kwargs.get("depth_raster")
-        or kwargs.get("depth_tif")
-        or kwargs.get("flood_depth_raster")
-        or kwargs.get("flood_depth_tif")
-    )
-    worldpop_tif = (
-        kwargs.get("worldpop_tif")
-        or kwargs.get("worldpop_grid")
-        or kwargs.get("population_raster")
-    )
-    threshold_m = kwargs.get("depth_threshold_m", kwargs.get("threshold_m", 0.02))
+def _aggregate_affected_population_(**kwargs: Any) -> pd.DataFrame:
+    """Aggregate population exposure."""
+    depth_raster = kwargs.get("depth_raster")
+    worldpop_tif = kwargs.get("worldpop_tif")
+    threshold_m = kwargs.get("depth_threshold_m", 0.02)
 
     if not depth_raster or not worldpop_tif:
         raise ValueError(
             "Missing raster inputs: depth_raster and worldpop_tif are required."
         )
 
-    pop_grid, pop_transform, pop_crs = _read_raster_array(str(worldpop_tif))
+    # WorldPop is constant across all patches in a run; cache to avoid repeated
+    # full-raster disk reads that can make long runs appear hung.
+    pop_grid, pop_transform, pop_crs = _read_static_raster_array_cached(
+        str(Path(worldpop_tif).resolve())
+    ) #TODO: check if needed
     depth_grid, depth_transform, depth_crs = _read_raster_array(str(depth_raster))
 
     if (
@@ -471,20 +473,14 @@ def _call_population_aggregator(
 
     candidates: Dict[str, Any] = {
         "depth_raster": str(patch.depth_raster),
-        "depth_tif": str(patch.depth_raster),
-        "flood_depth_raster": str(patch.depth_raster),
-        "flood_depth_tif": str(patch.depth_raster),
         "worldpop_tif": str(worldpop_tif),
-        "worldpop_grid": str(worldpop_tif),
-        "population_raster": str(worldpop_tif),
         "depth_threshold_m": float(depth_threshold_m),
-        "threshold_m": float(depth_threshold_m),
         "event_id": patch.event_id or f"lead{patch.lead_day}_m{patch.member_id}_rp{patch.rp}",
         "rp": int(patch.rp),
     }
     candidates.update(patch.extra)
 
-    result = _aggregate_affected_population_compat(**candidates)
+    result = _aggregate_affected_population_(**candidates)
     return _normalise_aggregated_rows(result)
 
 

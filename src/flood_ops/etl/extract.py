@@ -35,19 +35,22 @@ def extract(
         raise ValueError("Run spec must define inputs.oep_json")
 
     # load GloFAS file paths (single file or ensemble-member files)
-    forecast_paths = _resolve_forecast_path(run_spec, issue_date, basin_id)
+    forecast_paths = _resolve_forecast_path(run_spec, issue_date)
     if not forecast_paths:
         raise FileNotFoundError(
             f"Forecast file not available for basin '{basin_id}' on {issue_date}. "
             "Supply a forecast file via ingest settings."
         )
 
-    det = run_spec.detection
-    evt_parquet = Path(expand_template(det.evt_params_parquet, issue_date, basin=config.basin_name))
-
+    # load EVT parameters Parquet path
+    evt_template = str(run_spec.inputs.evt_params_parquet).strip()
+    evt_parquet = Path(expand_template(evt_template, issue_date, basin=config.basin_name))
     # load OEP file path
-    oep_path = Path(expand_template(run_spec.inputs.oep_json, issue_date, basin=config.basin_name))
+    oep_template = str(run_spec.inputs.oep_json).strip()
+    oep_path = Path(expand_template(oep_template, issue_date, basin=config.basin_name))
     thresholds, unit_metadata = _load_oep_thresholds(oep_path, run_spec.decision.oep_min)
+
+    det = run_spec.detection
 
     return {
         "basin_id": basin_id,
@@ -63,7 +66,6 @@ def extract(
 def _resolve_forecast_path(
     run_spec: PipelineRunSpec,
     issue_date: date,
-    basin_id: str,
 ) -> Optional[List[str]]:
     """
     Return local path(s) to the GloFAS ensemble NetCDF forecast files.

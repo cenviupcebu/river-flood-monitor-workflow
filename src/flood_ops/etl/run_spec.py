@@ -76,6 +76,7 @@ class InputSettings:
     """Required data paths consumed in Steps 3-4."""
 
     oep_json: str
+    evt_params_parquet: str = ""
 
 
 @dataclass
@@ -138,6 +139,7 @@ def load_run_spec(path: str) -> PipelineRunSpec:
     if inputs_cfg.get("oep_json"):
         inputs = InputSettings(
             oep_json=str(inputs_cfg["oep_json"]),
+            evt_params_parquet=str(inputs_cfg.get("evt_params_parquet", "")),
         )
 
     output = None
@@ -161,10 +163,18 @@ def load_run_spec(path: str) -> PipelineRunSpec:
         rp_cap=float(detection_cfg.get("rp_cap", 500.0)),
         total_ensemble_members=int(detection_cfg.get("total_ensemble_members", 51)),
         evt_params_parquet=str(detection_cfg.get("evt_params_parquet", "")),
-        jrc_root=str(detection_cfg.get("jrc_root", "")),
-        worldpop_tif=str(detection_cfg.get("worldpop_tif", "")),
-        adm3_geojson=str(detection_cfg.get("adm3_geojson", "")),
-        adm3_unit_column=str(detection_cfg.get("adm3_unit_column", "adm3_pcode")),
+        jrc_root=str(detection_cfg.get("jrc_root", inputs_cfg.get("jrc_root", ""))),
+        worldpop_tif=str(
+            detection_cfg.get("worldpop_tif", inputs_cfg.get("worldpop_tif", ""))
+        ),
+        adm3_geojson=str(
+            detection_cfg.get("adm3_geojson", inputs_cfg.get("adm3_geojson", ""))
+        ),
+        adm3_unit_column=str(
+            detection_cfg.get(
+                "adm3_unit_column", inputs_cfg.get("adm3_unit_column", "adm3_pcode")
+            )
+        ),
     )
 
     rules_raw = decision_cfg.get("rule_tiers") or DEFAULT_RULE_TIERS
