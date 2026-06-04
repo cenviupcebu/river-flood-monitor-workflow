@@ -54,7 +54,8 @@ class TierDecision:
     fired: bool
     fire_lead: Optional[int]
     probability_at_fire: Optional[float]
-    impact_threshold_people: Optional[float]
+    impact_population_threshold: Optional[float]
+    impact_population_at_fire: Optional[float] = None
 
 
 @dataclass

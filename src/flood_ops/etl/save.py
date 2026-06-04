@@ -31,7 +31,8 @@ _CSV_FIELDS = [
     "fired",
     "fire_lead",
     "probability_at_fire",
-    "impact_threshold_people",
+    "impact_population_threshold",
+    "impact_population_at_fire",
 ]
 
 
@@ -95,7 +96,8 @@ def _serialise_basin(result: BasinRunOutput) -> Dict[str, Any]:
                         "fired": tier.fired,
                         "fire_lead": tier.fire_lead,
                         "probability_at_fire": tier.probability_at_fire,
-                        "impact_threshold_people": tier.impact_threshold_people,
+                        "impact_population_threshold": tier.impact_population_threshold,
+                        "impact_population_at_fire": tier.impact_population_at_fire,
                     }
                     for tier in unit.tiers
                 ],
@@ -312,7 +314,8 @@ def _write_outputs(
                                 "fired": tier.fired,
                                 "fire_lead": tier.fire_lead,
                                 "probability_at_fire": tier.probability_at_fire,
-                                "impact_threshold_people": tier.impact_threshold_people,
+                                "impact_population_threshold": tier.impact_population_threshold,
+                                "impact_population_at_fire": tier.impact_population_at_fire,
                             }
                         )
         logger.info("CSV output written: %s", out_file)

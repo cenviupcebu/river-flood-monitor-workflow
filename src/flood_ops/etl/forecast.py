@@ -81,6 +81,8 @@ def forecast(
         prob_exceed,
         extracted["thresholds"],
         extracted.get("unit_metadata", {}),
+        impact_cube,
+        members,
         run_spec.decision,
     )
 
@@ -145,6 +147,8 @@ def _apply_tier_rules(
     prob_exceed: Dict[str, Dict[int, Dict[int, float]]],
     thresholds: Dict[str, Dict[int, float]],
     unit_metadata: Dict[str, Dict[str, str]],
+    impact_cube: ImpactCube,
+    members: Iterable[int],
     decision: DecisionSettings,
 ) -> List[UnitDecision]:
     """Evaluate all tier rules across all units.
@@ -154,7 +158,7 @@ def _apply_tier_rules(
     prob_exceed:
         Exceedance probability cube — unit → lead → rp → probability.
     thresholds:
-        OEP thresholds — unit → rp → impact_threshold_people.
+        OEP thresholds — unit → rp → impact_population_threshold.
     decision:
         Policy settings (persist_days, min_lead, rule list).
 
@@ -169,6 +173,7 @@ def _apply_tier_rules(
         decision.persist_days,
         decision.min_lead,
     )
+    member_list = sorted(set(int(m) for m in members))
     units: List[UnitDecision] = []
     fired_count = 0
 
@@ -186,8 +191,16 @@ def _apply_tier_rules(
                 persist_days=decision.persist_days,
             )
             prob_at_fire: Optional[float] = None
+            impact_population_at_fire: Optional[float] = None
             if fire_lead is not None:
                 prob_at_fire = lead_map.get(fire_lead, {}).get(rule.rp)
+                per_member_at_fire = impact_cube.get(unit_id, {}).get(fire_lead, {})
+                if member_list:
+                    impact_values = [
+                        float(per_member_at_fire.get(member, {}).get(rule.rp, 0.0))
+                        for member in member_list
+                    ]
+                    impact_population_at_fire = sum(impact_values) / len(impact_values)
                 fired_count += 1
                 logger.info(
                     "Tier %s FIRED — unit='%s', fire_lead=%d, p=%.2f",
@@ -205,7 +218,8 @@ def _apply_tier_rules(
                     fired=fire_lead is not None,
                     fire_lead=fire_lead,
                     probability_at_fire=prob_at_fire,
-                    impact_threshold_people=thresholds.get(unit_id, {}).get(rule.rp),
+                    impact_population_threshold=thresholds.get(unit_id, {}).get(rule.rp),
+                    impact_population_at_fire=impact_population_at_fire,
                 )
             )
         meta = unit_metadata.get(unit_id, {})

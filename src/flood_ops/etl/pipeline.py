@@ -296,7 +296,8 @@ def _serialise_unit(unit: UnitDecision) -> Dict[str, Any]:
                 "fired": tier.fired,
                 "fire_lead": tier.fire_lead,
                 "probability_at_fire": tier.probability_at_fire,
-                "impact_threshold_people": tier.impact_threshold_people,
+                "impact_population_threshold": tier.impact_population_threshold,
+                "impact_population_at_fire": tier.impact_population_at_fire,
             }
             for tier in unit.tiers
         ],
@@ -316,9 +317,14 @@ def _deserialise_unit(raw: Dict[str, Any]) -> UnitDecision:
                 if t.get("probability_at_fire") is not None
                 else None
             ),
-            impact_threshold_people=(
-                float(t["impact_threshold_people"])
-                if t.get("impact_threshold_people") is not None
+            impact_population_threshold=(
+                float(t["impact_population_threshold"])
+                if t.get("impact_population_threshold") is not None
+                else None
+            ),
+            impact_population_at_fire=(
+                float(t["impact_population_at_fire"])
+                if t.get("impact_population_at_fire") is not None
                 else None
             ),
         )
