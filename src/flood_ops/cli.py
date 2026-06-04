@@ -18,7 +18,6 @@ def main(
     issue_date: str = "",
     basin_names: List[str] | None = None,
     run_spec: str = "",
-    do_prepare: bool = False,
     do_extract: bool = False,
     do_forecast: bool = False,
     do_save: bool = False,
@@ -36,7 +35,6 @@ def main(
             "--basins", required=True, nargs="+", help=f"One or more basin names. Allowed: {', '.join(ALLOWED_BASINS)}"
         )
         parser.add_argument("--date", required=False, default=date.today().isoformat(), help="Issue date (YYYY-MM-DD)")
-        parser.add_argument("--prepare", action="store_true", help="Run prepare step")
         parser.add_argument("--extract", action="store_true", help="Run extract step")
         parser.add_argument("--forecast", action="store_true", help="Run forecast step")
         parser.add_argument("--save", action="store_true", help="Run save step")
@@ -44,7 +42,6 @@ def main(
         issue_date = args.date
         basin_names = normalize_basin_names(args.basins)
         run_spec = args.run_spec
-        do_prepare = bool(args.prepare)
         do_extract = bool(args.extract)
         do_forecast = bool(args.forecast)
         do_save = bool(args.save)
@@ -62,7 +59,6 @@ def main(
             issue_date=issue,
             basin_names=basin_names,
             run_spec_path=run_spec,
-            do_prepare=do_prepare,
             do_extract=do_extract,
             do_forecast=do_forecast,
             do_save=do_save,
@@ -71,7 +67,7 @@ def main(
         logger.exception("Daily ETL run failed: %s", exc)
         return 1
 
-    selected_any = any([do_prepare, do_extract, do_forecast, do_save])
+    selected_any = any([do_extract, do_forecast, do_save])
     if not selected_any or do_save:
         total_units = sum(len(b.units) for b in results)
         total_fired = sum(
@@ -91,8 +87,7 @@ def main(
     else:
         logger.info(
             "Daily ETL complete without save output. Steps run: "
-            "prepare=%s extract=%s forecast=%s save=%s",
-            do_prepare,
+            "extract=%s forecast=%s save=%s",
             do_extract,
             do_forecast,
             do_save,

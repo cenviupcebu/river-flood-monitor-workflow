@@ -15,7 +15,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from flood_ops.config import BasinConfig, build_basin_configs
 from flood_ops.logging import get_logger, setup_pipeline_file_log
 
-from .prepare import prepare
 from .run_spec import load_run_spec
 from .extract import extract
 from .forecast import forecast
@@ -30,7 +29,6 @@ def run_daily_monitoring_etl(
     issue_date: date,
     basin_names: List[str],
     run_spec_path: str,
-    do_prepare: bool = False,
     do_extract: bool = False,
     do_forecast: bool = False,
     do_save: bool = False,
@@ -40,12 +38,11 @@ def run_daily_monitoring_etl(
     Attaches a dated ``logs/<run_name>_<datetime>.txt`` file handler before
     the first basin so the full run trace is persisted.
 
-    If no step flags are enabled, all steps run in order. When an upstream
-    step is skipped, this function attempts to load the required artifacts
-    from ``data/etl_step_cache/<run_name>/<issue_date>/``.
+    If no step flags are enabled, extract, forecast, and save run in order.
+    When an upstream step is skipped, this function attempts to load the
+    required artifacts from ``data/etl_step_cache/<run_name>/<issue_date>/``.
     """
-    if not any([do_prepare, do_extract, do_forecast, do_save]):
-        do_prepare = True
+    if not any([do_extract, do_forecast, do_save]):
         do_extract = True
         do_forecast = True
         do_save = True
@@ -61,11 +58,10 @@ def run_daily_monitoring_etl(
 
     logger.info(
         "run_daily_monitoring_etl started — run='%s', issue_date=%s, basins=%d, "
-        "steps=[prepare=%s, extract=%s, forecast=%s, save=%s], log=%s",
+        "steps=[extract=%s, forecast=%s, save=%s], log=%s",
         run_spec.run_name,
         issue_date,
         len(basin_names),
-        do_prepare,
         do_extract,
         do_forecast,
         do_save,
@@ -82,23 +78,11 @@ def run_daily_monitoring_etl(
         basin_names=basin_names,
         run_spec_path=run_spec_path,
         selected_steps={
-            "prepare": do_prepare,
             "extract": do_extract,
             "forecast": do_forecast,
             "save": do_save,
         },
     )
-
-    if do_prepare:
-        prepare()
-        _write_prepare_marker(artifact_root)
-    elif any([do_extract, do_forecast, do_save]):
-        marker = _prepare_marker_path(artifact_root)
-        if not marker.exists():
-            logger.warning(
-                "Prepare marker not found at %s. Continuing without prepare step.",
-                marker,
-            )
 
     extracted_by_basin: Dict[str, Dict[str, Any]] = {}
     forecast_by_basin: Dict[str, Dict[str, Any]] = {}
@@ -157,7 +141,7 @@ def run_daily_monitoring_etl(
             len(extracted_by_basin),
         )
     else:
-        logger.info("run_daily_monitoring_etl complete (prepare only)")
+        logger.info("run_daily_monitoring_etl complete (no steps executed)")
 
     return [], None
 
@@ -168,10 +152,6 @@ def _artifact_root(run_name: str, issue_date: date) -> Path:
 
 def _run_manifest_path(artifact_root: Path) -> Path:
     return artifact_root / "run_manifest.json"
-
-
-def _prepare_marker_path(artifact_root: Path) -> Path:
-    return artifact_root / "prepare.done.json"
 
 
 def _extract_artifact_path(artifact_root: Path, basin_name: str) -> Path:
@@ -201,16 +181,6 @@ def _write_run_manifest(
     }
     path = _run_manifest_path(artifact_root)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
-
-def _write_prepare_marker(artifact_root: Path) -> None:
-    marker = {
-        "schema_version": 1,
-        "status": "ok",
-        "completed_at_utc": datetime.utcnow().isoformat() + "Z",
-    }
-    path = _prepare_marker_path(artifact_root)
-    path.write_text(json.dumps(marker, indent=2), encoding="utf-8")
 
 
 def _write_extract_artifact(
@@ -370,7 +340,6 @@ def _to_optional_str(value: Any) -> Optional[str]:
 
 
 __all__ = [
-    "prepare",
     "extract",
     "forecast",
     "save",

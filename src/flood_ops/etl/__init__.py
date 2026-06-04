@@ -4,7 +4,6 @@ Module layout
 -------------
 pipeline.py               Orchestration entry points for daily ETL runs.
 run_spec.py               PipelineRunSpec settings dataclasses and YAML loader.
-prepare.py                Input preparation helpers (forecast acquisition scaffolding).
 extract.py                Basin input extraction and threshold loading.
 forecast.py               Detection, impact evaluation, and tier decision logic.
 save.py                   Output serialisation for downstream systems.

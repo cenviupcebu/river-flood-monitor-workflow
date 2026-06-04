@@ -59,7 +59,6 @@ def save(
             "oep_min": run_spec.decision.oep_min,
             "oep_source": str(basin["oep_path"]),
             "impacts_source": basin["impacts_source"],
-            "detection_mode": "step2_detect",
         }
 
         basin_results.append(
