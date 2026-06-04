@@ -44,7 +44,6 @@ For cross-platform bootstrap helpers that also install Python and `cfgrib`:
 ### 3. Run the workflow
 
 The workflow is running as the following steps in order:
-- Prepare
 - Extract
 - Forecast
 - Save
@@ -58,14 +57,14 @@ uv run flood-monitoring `
     --basins cagayan
 ```
 
-The workflow also supports modular execution. If only specific steps (prepare, extract, forecast, or save) need to be executed instead of rerunning the full pipeline each time. Intermediate artifacts are cached by run name and issue date, which lets downstream steps resume from prior successful outputs for faster debugging and iteration. In practice, this is helpful when debugging a certain step and reduces turnaround time when you are validating logic changes, especially for expensive upstream steps.
+The workflow also supports modular execution. If only specific steps (extract, forecast, or save) need to be executed instead of rerunning the full pipeline each time, intermediate artifacts are cached by run name and issue date. That lets downstream steps resume from prior successful outputs for faster debugging and iteration.
 
 This can be done by adding flags `--<step>` to the cli.
 ```bash
 uv run flood-monitoring `
     --run-spec config/run_specs/daily_monitoring_etl.yaml `
     --basins cagayan `
-    --prepare
+    --extract
 ```
 
 You can also run multiple basins at once:
@@ -125,7 +124,7 @@ river-flood-workflow/
 │       ├── forecast.py
 │       ├── pipeline.py
 │       ├── pipeline_step_flags.py
-│       ├── prepare.py
+│       ├── prepare.py                legacy helper, not used by the ETL workflow
 │       ├── run_spec.py
 │       ├── save.py
 │       └── utils.py
