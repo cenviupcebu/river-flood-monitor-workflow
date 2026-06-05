@@ -31,10 +31,10 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from flood_ops.etl.run_spec import DetectionSettings, DecisionSettings, PipelineRunSpec
+from river_flood_monitoring.etl.run_spec import DetectionSettings, DecisionSettings, PipelineRunSpec
 from .utils import TierDecision, UnitDecision
 
-from flood_ops.logging import get_logger
+from river_flood_monitoring.logging import get_logger
 logger = get_logger(__name__)
 
 

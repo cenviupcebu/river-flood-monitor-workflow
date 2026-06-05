@@ -111,7 +111,7 @@ river-flood-workflow/
 ├── logs/
 │   └── YYYY/MM/*.txt              run logs by month
 │
-├── src/flood_ops/
+├── src/river_flood_monitoring/
 │   ├── __init__.py
 │   ├── cli.py                     console-script: flood-monitoring
 │   ├── cli_step_flags.py          pipeline step toggles

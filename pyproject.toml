@@ -48,7 +48,7 @@ dev = [
 ]
 
 [project.scripts]
-flood-monitoring = "flood_ops.cli:main"
+flood-monitoring = "river_flood_monitoring.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

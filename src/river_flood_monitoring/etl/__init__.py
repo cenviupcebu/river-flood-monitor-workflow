@@ -12,7 +12,7 @@ extract-example.py        Example extraction helpers for experimentation.
 
 Public API
 ----------
->>> from flood_ops.etl import run_daily_monitoring_etl
+>>> from river_flood_monitoring.etl import run_daily_monitoring_etl
 >>> results, out_file = run_daily_monitoring_etl(issue_date, basin_names, run_spec_path)
 """
 

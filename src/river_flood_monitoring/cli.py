@@ -7,9 +7,9 @@ from datetime import date
 import sys
 from typing import List
 
-from flood_ops.config import normalize_basin_names, ALLOWED_BASINS
-from flood_ops.etl.pipeline import run_daily_monitoring_etl
-from flood_ops.logging import get_logger
+from river_flood_monitoring.config import normalize_basin_names, ALLOWED_BASINS
+from river_flood_monitoring.etl.pipeline import run_daily_monitoring_etl
+from river_flood_monitoring.logging import get_logger
 
 logger = get_logger(__name__)
 

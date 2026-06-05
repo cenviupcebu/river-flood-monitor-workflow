@@ -12,8 +12,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from flood_ops.config import BasinConfig, build_basin_configs
-from flood_ops.logging import get_logger, setup_pipeline_file_log
+from river_flood_monitoring.config import BasinConfig, build_basin_configs
+from river_flood_monitoring.logging import get_logger, setup_pipeline_file_log
 
 from .run_spec import load_run_spec
 from .extract import extract

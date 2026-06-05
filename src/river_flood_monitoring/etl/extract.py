@@ -12,8 +12,8 @@ from typing import Any, Dict, List, Optional
 import json
 import re
 
-from flood_ops.config import BasinConfig
-from flood_ops.logging import get_logger
+from river_flood_monitoring.config import BasinConfig
+from river_flood_monitoring.logging import get_logger
 from .run_spec import PipelineRunSpec
 from .utils import expand_template
 

@@ -12,7 +12,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from flood_ops.logging import get_logger
+from river_flood_monitoring.logging import get_logger
 from .run_spec import PipelineRunSpec
 from .utils import BasinRunOutput, expand_template
 

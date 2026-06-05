@@ -35,8 +35,8 @@ def _build_formatter() -> logging.Formatter:
 
 
 def setup_logging(log_level: str = "INFO") -> None:
-    """Initialise the flood_ops logger tree with a console handler."""
-    root_logger = logging.getLogger("flood_ops")
+    """Initialise the river_flood_monitoring logger tree with a console handler."""
+    root_logger = logging.getLogger("river_flood_monitoring")
     level = logging._nameToLevel.get(log_level.upper(), logging.INFO)
     root_logger.setLevel(level)
 
@@ -50,13 +50,13 @@ def setup_logging(log_level: str = "INFO") -> None:
 
 
 def get_logger(name: str) -> logging.Logger:
-    """Return a logger under the flood_ops namespace."""
-    if not logging.getLogger("flood_ops").handlers:
+    """Return a logger under the river_flood_monitoring namespace."""
+    if not logging.getLogger("river_flood_monitoring").handlers:
         setup_logging()
 
-    if name.startswith("flood_ops"):
+    if name.startswith("river_flood_monitoring"):
         return logging.getLogger(name)
-    return logging.getLogger(f"flood_ops.{name}")
+    return logging.getLogger(f"river_flood_monitoring.{name}")
 
 
 def setup_pipeline_file_log(
@@ -64,14 +64,14 @@ def setup_pipeline_file_log(
     run_name: str = "etl",
     log_level: str = "DEBUG",
 ) -> Path:
-    """Attach a run-scoped file handler to the flood_ops root logger."""
+    """Attach a run-scoped file handler to the river_flood_monitoring root logger."""
     log_dir = Path(log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
     log_file = log_dir / f"{run_name}_{timestamp}.txt"
 
-    root = logging.getLogger("flood_ops")
+    root = logging.getLogger("river_flood_monitoring")
     if not root.handlers:
         setup_logging()
 
