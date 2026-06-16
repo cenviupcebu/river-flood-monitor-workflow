@@ -319,6 +319,7 @@ def _write_outputs(
                             }
                         )
         logger.info("CSV output written: %s", out_file)
+        _write_decision_file(output_dir=output_dir, basin_results=basin_results)
         _plot_maps(run_spec=run_spec, csv_path=out_file, output_dir=output_dir)
         return out_file
 
@@ -331,4 +332,21 @@ def _write_outputs(
     }
     out_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     logger.info("JSON output written: %s", out_file)
+    _write_decision_file(output_dir=output_dir, basin_results=basin_results)
     return out_file
+
+
+def _write_decision_file(output_dir: Path, basin_results: List[BasinRunOutput]) -> Path:
+    """Write a single-line decision flag for downstream automation."""
+    total_fired = sum(
+        1
+        for basin in basin_results
+        for unit in basin.units
+        for tier in unit.tiers
+        if tier.fired
+    )
+    triggered = total_fired > 0
+    decision_file = output_dir / "decision.txt"
+    decision_file.write_text(f"triggered={triggered}\n", encoding="utf-8")
+    logger.info("Decision output written: %s (triggered=%s)", decision_file, triggered)
+    return decision_file
