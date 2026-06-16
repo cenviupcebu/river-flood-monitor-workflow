@@ -123,8 +123,6 @@ def _create_save_output_context(run_spec: PipelineRunSpec, issue_date: date) -> 
     """Create common output context shared by all save steps."""
     if run_spec.output is None:
         raise ValueError("Run spec must define output.output_dir_template")
-    if run_spec.output.format.lower() != "csv":
-        raise ValueError("Save stage supports only output.format='csv'")
 
     output_dir = Path(expand_template(run_spec.output.output_dir_template, issue_date))
     output_dir.mkdir(parents=True, exist_ok=True)
