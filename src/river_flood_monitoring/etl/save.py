@@ -49,10 +49,14 @@ def save(
     )
 
     decision_summary_payload = _prepare_decision_summary(basin_results)
-    decision_summary_file = _save_decision_summary_file(
-        output_ctx=output_ctx,
-        decision_summary_payload=decision_summary_payload,
-    )
+    decision_summary_file = None
+    if decision_summary_payload is not None:
+        decision_summary_file = _save_decision_summary_file(
+            output_ctx=output_ctx,
+            decision_summary_payload=decision_summary_payload,
+        )
+    else:
+        logger.info("No activated tiers found; skipping decision summary file")
 
     fired_df = _prepare_trigger_decisions_for_plotting(trigger_df=trigger_df)
 
@@ -171,7 +175,7 @@ def _save_trigger_decisions(
     return out_file
 
 
-def _prepare_decision_summary(basin_results: List[BasinRunOutput]) -> Dict[str, Any]:
+def _prepare_decision_summary(basin_results: List[BasinRunOutput]) -> Dict[str, Any] | None:
     """Create decision summary content for downstream automation."""
     total_fired = sum(
         1
@@ -180,11 +184,13 @@ def _prepare_decision_summary(basin_results: List[BasinRunOutput]) -> Dict[str, 
         for tier in unit.tiers
         if tier.fired
     )
-    triggered = total_fired > 0
+    if total_fired <= 0:
+        return None
+
     return {
         "file_name": "decision.txt",
-        "text": f"triggered={triggered}\n",
-        "triggered": triggered,
+        "text": "triggered=True\n",
+        "triggered": True,
     }
 
 
