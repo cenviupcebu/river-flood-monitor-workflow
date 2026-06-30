@@ -111,7 +111,9 @@ def run_daily_monitoring_etl(
 
     if do_save:
         basin_forecasts = [forecast_by_basin[cfg.basin_name] for cfg in basin_configs]
-        basin_results, output_file = save(run_spec, issue_date, basin_forecasts)
+        save_outputs = save(run_spec, issue_date, basin_forecasts)
+        basin_results = save_outputs["basin_results"]
+        output_file = save_outputs["main_output_file"]
 
         total_fired = sum(
             1

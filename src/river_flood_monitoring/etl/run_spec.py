@@ -81,10 +81,9 @@ class InputSettings:
 
 @dataclass
 class OutputSettings:
-    """Output location and format for Save."""
+    """Output location settings for Save."""
 
     output_dir_template: str
-    format: str = "json"
     log_dir_template: str = "logs"
 
 
@@ -146,7 +145,6 @@ def load_run_spec(path: str) -> PipelineRunSpec:
     if output_cfg.get("output_dir_template"):
         output = OutputSettings(
             output_dir_template=str(output_cfg["output_dir_template"]),
-            format=str(output_cfg.get("format", "json")).lower(),
             log_dir_template=str(output_cfg.get("log_dir_template", "logs")),
         )
 
