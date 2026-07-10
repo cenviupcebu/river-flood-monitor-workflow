@@ -67,7 +67,6 @@ decision:
 output:
   # Directory to write trigger decisions.
   output_dir_template: "data/gold/trigger_decisions/{date}"
-  format: "csv"   # "json" or "csv"
   # Log files: logs/{yyyy}/{mm}/<run_name>_<datetime>.txt
   log_dir_template: "logs/{yyyy}/{mm}"
   # Target ADM2 provinces:
