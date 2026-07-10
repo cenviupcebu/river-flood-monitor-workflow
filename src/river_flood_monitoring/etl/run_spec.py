@@ -116,6 +116,39 @@ def parse_tier_rules(raw_rules: Dict[str, Dict[str, Any]]) -> List[TierRule]:
     return rules
 
 
+def _normalize_target_adm2_pcodes(
+    raw_targets: Dict[str, Any] | None,
+) -> Dict[str, List[str]]:
+    """Normalize target ADM2 config into a basin->pcodes mapping.
+
+    Accepts only basin-mapped dictionaries.
+    """
+    if raw_targets is None:
+        return {"cagayan": ["PH02015"], "bicol": ["PH05017"]}
+
+    if not isinstance(raw_targets, dict):
+        raise ValueError(
+            "output.target_adm2_pcodes must be a mapping of basin names to ADM2 pcode lists"
+        )
+
+    normalized: Dict[str, List[str]] = {}
+    for basin_name, basin_targets in raw_targets.items():
+        basin_key = str(basin_name).strip().lower()
+
+        if isinstance(basin_targets, (list, tuple, set)):
+            normalized[basin_key] = [
+                str(pcode).strip()
+                for pcode in basin_targets
+                if str(pcode).strip()
+            ]
+        elif basin_targets is None:
+            normalized[basin_key] = []
+        else:
+            pcode = str(basin_targets).strip()
+            normalized[basin_key] = [pcode] if pcode else []
+    return normalized
+
+
 def load_run_spec(path: str) -> PipelineRunSpec:
     """Load a YAML run-spec file into typed settings objects."""
     with open(Path(path), "r", encoding="utf-8") as f:
@@ -151,9 +184,9 @@ def load_run_spec(path: str) -> PipelineRunSpec:
         output = OutputSettings(
             output_dir_template=str(output_cfg["output_dir_template"]),
             log_dir_template=str(output_cfg["log_dir_template"]),
-            target_adm2_pcodes=[
-                str(pcode) for pcode in output_cfg.get("target_adm2_pcodes")
-            ],
+            target_adm2_pcodes=_normalize_target_adm2_pcodes(
+                output_cfg.get("target_adm2_pcodes")
+            ),
         )
 
     _default_rps: List[int] = [2, 5, 10, 20]

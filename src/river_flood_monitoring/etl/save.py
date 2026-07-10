@@ -176,7 +176,7 @@ def _prepare_trigger_decision_records(
     Args:
         basin_results: List of basin outputs with trigger decisions
         timestamp: UTC timestamp for issue_time column
-        target_adm2_pcodes: Dict mapping basin names to lists of target ADM2 pcodes
+        target_adm2_pcodes: Basin mapping to target ADM2 pcodes
     """
     # Build rows without tier column, with issue_time and severity_rp
     rows = []
