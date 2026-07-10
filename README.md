@@ -48,7 +48,7 @@ The workflow is running as the following steps in order:
 - Forecast
 - Save
 
-#### Option 1: Run the CLI tool
+#### Run the CLI tool
 
 For full workflow run:
 ```bash
@@ -73,14 +73,6 @@ uv run flood-monitoring `
     --run-spec config/run_specs/daily_monitoring_etl.yaml `
     --basins cagayan abra ilocos
 ```
-#### Option 2: Run Jupyter notebook
-
-```bash
-uv run jupyter lab
-```
-
-For automated daily runs, schedule the CLI command with an external scheduler
-(Windows Task Scheduler, cron, Airflow, Azure ML schedule).
 
 ### Repo structure:
 
