@@ -40,14 +40,14 @@ def save(
         output_ctx["output_dir"],
     )
 
-    # Use target provinces from run spec (single source of truth).
-    target_adm2_pcodes = set(run_spec.output.target_adm2_pcodes)
+    # Use target provinces from run spec (dict mapping basins to their target pcodes).
+    target_adm2_pcodes_by_basin = run_spec.output.target_adm2_pcodes
 
     # Prepare trigger decisions split into activation (ADM2) and operational_information (ADM3)
     trigger_dfs = _prepare_trigger_decision_records(
         basin_results=basin_results,
         timestamp=output_ctx["timestamp"],
-        target_adm2_pcodes=target_adm2_pcodes,
+        target_adm2_pcodes=target_adm2_pcodes_by_basin,
     )
     activation_df = trigger_dfs["activation"]
     operational_information_df = trigger_dfs["operational_information"]
@@ -165,13 +165,18 @@ def _create_save_output_context(run_spec: PipelineRunSpec, issue_date: date) -> 
 def _prepare_trigger_decision_records(
     basin_results: List[BasinRunOutput],
     timestamp: str,
-    target_adm2_pcodes: set,
+    target_adm2_pcodes: Dict[str, List[str]],
 ) -> Dict[str, pd.DataFrame]:
     """Create and split trigger decisions into activation (ADM2) and operational_information (ADM3).
     
     Returns dict with 'activation' and 'operational_information' DataFrames.
     Both include issue_time column and severity_rp (renamed from rp), without tier column.
-    Filters to target provinces only.
+    Filters to target provinces only, where each basin is mapped to its assigned provinces.
+    
+    Args:
+        basin_results: List of basin outputs with trigger decisions
+        timestamp: UTC timestamp for issue_time column
+        target_adm2_pcodes: Dict mapping basin names to lists of target ADM2 pcodes
     """
     # Build rows without tier column, with issue_time and severity_rp
     rows = []
@@ -204,15 +209,31 @@ def _prepare_trigger_decision_records(
     
     full_df = pd.DataFrame(rows)
     
+    # Filter by basin-specific target pcodes
+    def is_pcode_in_basin_targets(row) -> bool:
+        """Check if pcode is in the target list for this basin."""
+        basin_name = str(row["basin_name"]).lower()
+        target_list = target_adm2_pcodes.get(basin_name, [])
+        pcode = str(row["pcode"]).strip()
+        
+        if row["level"].upper() == "ADM2":
+            return pcode in target_list
+        elif row["level"].upper() == "ADM3":
+            # ADM3 codes are 9 chars (e.g., "PH0201501"), ADM2 codes are 7 chars (e.g., "PH02015")
+            adm2_code = pcode[:7]
+            return adm2_code in target_list
+        return False
+    
+    full_df["matches_target"] = full_df.apply(is_pcode_in_basin_targets, axis=1)
+    filtered_df = full_df[full_df["matches_target"]].drop(columns=["matches_target"])
+    
     # Split: ADM2 (activation) vs ADM3 (operational_information)
-    activation_df = full_df[
-        (full_df["level"].astype(str).str.upper() == "ADM2")
-        & (full_df["pcode"].astype(str).isin(target_adm2_pcodes))
+    activation_df = filtered_df[
+        filtered_df["level"].astype(str).str.upper() == "ADM2"
     ].copy()
     
-    operational_information_df = full_df[
-        (full_df["level"].astype(str).str.upper() == "ADM3")
-        & (full_df["pcode"].astype(str).str[:7].isin(target_adm2_pcodes))
+    operational_information_df = filtered_df[
+        filtered_df["level"].astype(str).str.upper() == "ADM3"
     ].copy()
     
     return {
