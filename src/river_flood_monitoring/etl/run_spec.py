@@ -86,6 +86,7 @@ class OutputSettings:
     output_dir_template: str
     format: str = "json"
     log_dir_template: str = "logs"
+    target_adm2_pcodes: List[str] = field(default_factory=lambda: ["PH02015", "PH05017"])
 
 
 @dataclass
@@ -148,6 +149,9 @@ def load_run_spec(path: str) -> PipelineRunSpec:
             output_dir_template=str(output_cfg["output_dir_template"]),
             format=str(output_cfg.get("format", "json")).lower(),
             log_dir_template=str(output_cfg.get("log_dir_template", "logs")),
+            target_adm2_pcodes=[
+                str(pcode) for pcode in output_cfg.get("target_adm2_pcodes")
+            ],
         )
 
     _default_rps: List[int] = [2, 5, 10, 20]

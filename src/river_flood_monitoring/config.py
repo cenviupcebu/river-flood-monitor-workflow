@@ -7,7 +7,7 @@ from typing import List
 
 
 # Allowed basins for this workflow
-ALLOWED_BASINS = ["cagayan"]
+ALLOWED_BASINS = ["cagayan", "bicol"]
 
 
 @dataclass(frozen=True)
