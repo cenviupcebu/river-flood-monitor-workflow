@@ -49,10 +49,11 @@ def run_daily_monitoring_etl(
 
     run_spec = load_run_spec(run_spec_path)
 
+    log_path_date = date.today()
     if run_spec.output.log_dir_template.strip():
         log_dir_template = run_spec.output.log_dir_template
     log_file = setup_pipeline_file_log(
-        log_dir=Path(expand_template(log_dir_template, issue_date)),
+        log_dir=Path(expand_template(log_dir_template, log_path_date)),
         run_name=run_spec.run_name,
     )
 
