@@ -84,8 +84,8 @@ class OutputSettings:
     """Output location settings for Save."""
 
     output_dir_template: str
-    log_dir_template: str = "logs"
-    target_adm2_pcodes: List[str] = field(default_factory=lambda: ["PH02015", "PH05017"])
+    log_dir_template: str
+    target_adm2_pcodes: Dict[str, List[str]] = field(default_factory=lambda: {"cagayan": ["PH02015"], "bicol": ["PH05017"]})
 
 
 @dataclass
@@ -144,9 +144,13 @@ def load_run_spec(path: str) -> PipelineRunSpec:
 
     output = None
     if output_cfg.get("output_dir_template"):
+        if "log_dir_template" not in output_cfg:
+            raise ValueError(
+                "Missing required output.log_dir_template in run-spec YAML"
+            )
         output = OutputSettings(
             output_dir_template=str(output_cfg["output_dir_template"]),
-            log_dir_template=str(output_cfg.get("log_dir_template", "logs")),
+            log_dir_template=str(output_cfg["log_dir_template"]),
             target_adm2_pcodes=[
                 str(pcode) for pcode in output_cfg.get("target_adm2_pcodes")
             ],

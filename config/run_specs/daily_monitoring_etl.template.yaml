@@ -69,7 +69,7 @@ output:
   output_dir_template: "data/gold/trigger_decisions/{date}"
   # Log files: logs/{yyyy}/{mm}/<run_name>_<datetime>.txt
   log_dir_template: "logs/{yyyy}/{mm}"
-  # Target ADM2 provinces:
+  # Target ADM2 provinces per basin (users can add more pcodes per basin as needed)
   target_adm2_pcodes:
-    - "PH02015"  # Cagayan
-    - "PH05017"  # Camarines Sur
+    cagayan: ["PH02015"]     # Cagayan basin: Cagayan province
+    bicol: ["PH05017"]       # Bicol basin: Camarines Sur province
