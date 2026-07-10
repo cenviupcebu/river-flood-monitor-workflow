@@ -40,13 +40,37 @@ def save(
         output_ctx["output_dir"],
     )
 
-    trigger_df = _prepare_trigger_decision_records(basin_results)
-    main_output_file = _save_trigger_decisions(
-        trigger_df=trigger_df,
-        output_dir=output_ctx["output_dir"],
-        issue_date=issue_date,
+    # Use target provinces from run spec (single source of truth).
+    target_adm2_pcodes = set(run_spec.output.target_adm2_pcodes)
+
+    # Prepare trigger decisions split into activation (ADM2) and operational_information (ADM3)
+    trigger_dfs = _prepare_trigger_decision_records(
+        basin_results=basin_results,
         timestamp=output_ctx["timestamp"],
+        target_adm2_pcodes=target_adm2_pcodes,
     )
+    activation_df = trigger_dfs["activation"]
+    operational_information_df = trigger_dfs["operational_information"]
+
+    # Save activation (ADM2) file
+    activation_file = None
+    if not activation_df.empty:
+        activation_file = _save_activation_decisions(
+            activation_df=activation_df,
+            output_dir=output_ctx["output_dir"],
+            issue_date=issue_date,
+            timestamp=output_ctx["timestamp"],
+        )
+
+    # Save operational_information (ADM3) file
+    operational_information_file = None
+    if not operational_information_df.empty:
+        operational_information_file = _save_operational_information(
+            operational_information_df=operational_information_df,
+            output_dir=output_ctx["output_dir"],
+            issue_date=issue_date,
+            timestamp=output_ctx["timestamp"],
+        )
 
     decision_summary_payload = _prepare_decision_summary(basin_results)
     decision_summary_file = None
@@ -58,17 +82,18 @@ def save(
     else:
         logger.info("No activated tiers found; skipping decision summary file")
 
-    fired_df = _prepare_trigger_decisions_for_plotting(trigger_df=trigger_df)
+    # Use operational_information (ADM3 only) for plotting
+    fired_df = _prepare_trigger_decisions_for_plotting(trigger_df=operational_information_df)
 
     map_plots = _plot_activated_areas(
         run_spec=run_spec,
-        trigger_df=trigger_df,
+        trigger_df=operational_information_df,
         fired_df=fired_df,
     )
     map_plots.extend(
         _plot_population_exposed(
             run_spec=run_spec,
-            trigger_df=trigger_df,
+            trigger_df=operational_information_df,
             fired_df=fired_df,
         )
     )
@@ -79,7 +104,8 @@ def save(
 
     return {
         "basin_results": basin_results,
-        "main_output_file": main_output_file,
+        "activation_file": activation_file,
+        "operational_information_file": operational_information_file,
         "decision_summary_file": decision_summary_file,
         "map_files": map_files,
     }
@@ -136,8 +162,18 @@ def _create_save_output_context(run_spec: PipelineRunSpec, issue_date: date) -> 
         "timestamp": datetime.utcnow().strftime("%Y%m%dT%H%M%SZ"),
     }
 
-def _prepare_trigger_decision_records(basin_results: List[BasinRunOutput]) -> pd.DataFrame:
-    # Create trigger decisions DataFrame
+def _prepare_trigger_decision_records(
+    basin_results: List[BasinRunOutput],
+    timestamp: str,
+    target_adm2_pcodes: set,
+) -> Dict[str, pd.DataFrame]:
+    """Create and split trigger decisions into activation (ADM2) and operational_information (ADM3).
+    
+    Returns dict with 'activation' and 'operational_information' DataFrames.
+    Both include issue_time column and severity_rp (renamed from rp), without tier column.
+    Filters to target provinces only.
+    """
+    # Build rows without tier column, with issue_time and severity_rp
     rows = []
     for basin in basin_results:
         for unit in basin.units:
@@ -145,12 +181,12 @@ def _prepare_trigger_decision_records(basin_results: List[BasinRunOutput]) -> pd
                 rows.append(
                     {
                         "issue_date": basin.issue_date,
+                        "issue_time": timestamp,
                         "basin_name": basin.basin_name,
                         "level": unit.level,
                         "name": unit.name,
                         "pcode": unit.pcode,
-                        "tier": tier.tier,
-                        "rp": tier.rp,
+                        "severity_rp": tier.rp,
                         "p_threshold": tier.p_threshold,
                         "fired": tier.fired,
                         "fire_lead": tier.fire_lead,
@@ -159,19 +195,55 @@ def _prepare_trigger_decision_records(basin_results: List[BasinRunOutput]) -> pd
                         "impact_population_at_fire": tier.impact_population_at_fire,
                     }
                 )
-    trigger_df = pd.DataFrame(rows)
-    return trigger_df
+    
+    if not rows:
+        return {
+            "activation": pd.DataFrame(),
+            "operational_information": pd.DataFrame(),
+        }
+    
+    full_df = pd.DataFrame(rows)
+    
+    # Split: ADM2 (activation) vs ADM3 (operational_information)
+    activation_df = full_df[
+        (full_df["level"].astype(str).str.upper() == "ADM2")
+        & (full_df["pcode"].astype(str).isin(target_adm2_pcodes))
+    ].copy()
+    
+    operational_information_df = full_df[
+        (full_df["level"].astype(str).str.upper() == "ADM3")
+        & (full_df["pcode"].astype(str).str[:7].isin(target_adm2_pcodes))
+    ].copy()
+    
+    return {
+        "activation": activation_df,
+        "operational_information": operational_information_df,
+    }
 
-def _save_trigger_decisions(
-    trigger_df: pd.DataFrame,
+
+def _save_activation_decisions(
+    activation_df: pd.DataFrame,
     output_dir: Path,
     issue_date: date,
     timestamp: str,
 ) -> Path:
-    """Persist trigger_decisions DataFrame as CSV."""
-    out_file = output_dir / f"trigger_decisions_{issue_date.isoformat()}_{timestamp}.csv"
-    trigger_df.to_csv(out_file, index=False)
-    logger.info("CSV output written: %s", out_file)
+    """Persist activation (ADM2) DataFrame as CSV."""
+    out_file = output_dir / f"activation_{issue_date.isoformat()}_{timestamp}.csv"
+    activation_df.to_csv(out_file, index=False)
+    logger.info("Activation file written: %s", out_file)
+    return out_file
+
+
+def _save_operational_information(
+    operational_information_df: pd.DataFrame,
+    output_dir: Path,
+    issue_date: date,
+    timestamp: str,
+) -> Path:
+    """Persist operational_information (ADM3) DataFrame as CSV."""
+    out_file = output_dir / f"operational_information_{issue_date.isoformat()}_{timestamp}.csv"
+    operational_information_df.to_csv(out_file, index=False)
+    logger.info("Operational information file written: %s", out_file)
     return out_file
 
 
@@ -210,7 +282,7 @@ def _save_decision_summary_file(
 
 
 def _prepare_trigger_decisions_for_plotting(trigger_df: pd.DataFrame) -> pd.DataFrame:
-    """Prepare activated ADM3 trigger rows with one highest tier record per basin/lead/unit."""
+    """Prepare activated ADM3 trigger rows with one highest severity_rp record per basin/lead/unit."""
     if trigger_df.empty:
         logger.info("Skipping map plotting: CSV has no rows")
         return pd.DataFrame()
@@ -230,12 +302,13 @@ def _prepare_trigger_decisions_for_plotting(trigger_df: pd.DataFrame) -> pd.Data
 
     fired_df["pcode"] = fired_df["pcode"].astype(str).str.strip()
 
-    tier_rank = {"T1": 1, "T2": 2, "T3": 3}
-    fired_df["tier_rank"] = fired_df["tier"].map(tier_rank).fillna(0).astype(int)
+    # Map severity_rp values to rank (2→1, 5→2, 10→3 for T1, T2, T3)
+    severity_rank = {2: 1, 5: 2, 10: 3}
+    fired_df["severity_rank"] = fired_df["severity_rp"].map(severity_rank).fillna(0).astype(int)
 
-    # Select one tier per unit (highest activated tier) for each basin and lead.
+    # Select one severity per unit (highest) for each basin and lead.
     fired_df = (
-        fired_df.sort_values("tier_rank")
+        fired_df.sort_values("severity_rank")
         .groupby(["basin_name", "fire_lead", "pcode"], as_index=False)
         .last()
     )
@@ -257,7 +330,8 @@ def _plot_activated_areas(
     if fired_df.empty:
         return []
 
-    tier_colors = {"T1": "#FFD54F", "T2": "#FB8C00", "T3": "#D32F2F"}
+    # Map severity_rp values to colors (2→T1, 5→T2, 10→T3)
+    severity_colors = {2: "#FFD54F", 5: "#FB8C00", 10: "#D32F2F"}
 
     adm3_gdf = gpd.read_file(adm3_geojson_path)
     expected_unit_col = "adm3_pcode"
@@ -297,53 +371,54 @@ def _plot_activated_areas(
             continue
 
         merged = basin_gdf.merge(
-            lead_rows[["pcode", "tier"]],
+            lead_rows[["pcode", "severity_rp"]],
             left_on="adm3_pcode",
             right_on="pcode",
             how="left",
         )
-        merged["color"] = merged["tier"].map(tier_colors)
+        merged["color"] = merged["severity_rp"].map(severity_colors)
 
         fig, ax = plt.subplots(figsize=(9, 9))
 
         # Non-activated units are boundaries only.
         merged.boundary.plot(ax=ax, color="#4D4D4D", linewidth=0.5)
 
-        for tier, color in tier_colors.items():
-            tier_gdf = merged.loc[merged["tier"] == tier]
-            if not tier_gdf.empty:
-                tier_gdf.plot(ax=ax, color=color, edgecolor="#333333", linewidth=0.5)
+        for rp, color in severity_colors.items():
+            severity_gdf = merged.loc[merged["severity_rp"] == rp]
+            if not severity_gdf.empty:
+                severity_gdf.plot(ax=ax, color=color, edgecolor="#333333", linewidth=0.5)
 
         ax.set_axis_off()
         ax.set_title(f"{basin_name} | activated alerts at lead day {fire_lead}")
 
+        severity_labels = {2: "T1 (RP2)", 5: "T2 (RP5)", 10: "T3 (RP10)"}
         legend_handles = [
             plt.Line2D(
                 [0],
                 [0],
                 marker="s",
                 color="w",
-                markerfacecolor=tier_colors["T1"],
+                markerfacecolor=severity_colors[2],
                 markersize=10,
-                label="T1",
+                label=severity_labels[2],
             ),
             plt.Line2D(
                 [0],
                 [0],
                 marker="s",
                 color="w",
-                markerfacecolor=tier_colors["T2"],
+                markerfacecolor=severity_colors[5],
                 markersize=10,
-                label="T2",
+                label=severity_labels[5],
             ),
             plt.Line2D(
                 [0],
                 [0],
                 marker="s",
                 color="w",
-                markerfacecolor=tier_colors["T3"],
+                markerfacecolor=severity_colors[10],
                 markersize=10,
-                label="T3",
+                label=severity_labels[10],
             ),
             plt.Line2D(
                 [0],

@@ -113,7 +113,8 @@ def run_daily_monitoring_etl(
         basin_forecasts = [forecast_by_basin[cfg.basin_name] for cfg in basin_configs]
         save_outputs = save(run_spec, issue_date, basin_forecasts)
         basin_results = save_outputs["basin_results"]
-        output_file = save_outputs["main_output_file"]
+        activation_file = save_outputs["activation_file"]
+        operational_information_file = save_outputs["operational_information_file"]
 
         total_fired = sum(
             1
@@ -123,12 +124,13 @@ def run_daily_monitoring_etl(
             if tier.fired
         )
         logger.info(
-            "run_daily_monitoring_etl complete — %d basins, %d tier fires, output=%s",
+            "run_daily_monitoring_etl complete — %d basins, %d tier fires, activation=%s, operational_information=%s",
             len(basin_results),
             total_fired,
-            output_file,
+            activation_file,
+            operational_information_file,
         )
-        return basin_results, output_file
+        return basin_results, operational_information_file
 
     if do_forecast:
         total_units = sum(len(v.get("units", [])) for v in forecast_by_basin.values())
