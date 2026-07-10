@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from flood_ops.etl.step3_impact import EventPatchImpactInput, compute_impacts_from_event_patches
+from river_flood_monitoring.etl.step3_impact import EventPatchImpactInput, compute_impacts_from_event_patches
 
 
 def _install_fake_philflood(monkeypatch: pytest.MonkeyPatch, func) -> None:

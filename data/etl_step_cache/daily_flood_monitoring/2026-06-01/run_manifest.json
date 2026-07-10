@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "run_name": "daily_flood_monitoring",
+  "issue_date": "2026-06-01",
+  "run_spec_path": "config/run_specs/daily_monitoring_etl.yaml",
+  "basin_names": [
+    "cagayan",
+    "bicol"
+  ],
+  "selected_steps": {
+    "extract": true,
+    "forecast": true,
+    "save": true
+  },
+  "generated_at_utc": "2026-07-10T13:46:50.947403Z"
+}
