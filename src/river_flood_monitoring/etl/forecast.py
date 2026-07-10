@@ -73,7 +73,7 @@ def forecast(
         settings=extracted["det"],
         lead_days_list=lead_days_list,
     )
-    impacts_source = "step2_detect:" + ",".join(str(p) for p in extracted["forecast_paths"])
+    impacts_source = "detect_phase:" + ",".join(str(p) for p in extracted["forecast_paths"])
     logger.info("Detection mode complete — impact cube has %d units", len(impact_cube))
 
     prob_exceed = _compute_prob_exceed(impact_cube, extracted["thresholds"], members)
@@ -921,7 +921,7 @@ def _detect_flood_patches_for_lead(
             )
             if q_vals is None:
                 continue
-            q_vals = q_vals * 10  # TODO: temporary mock multiplier for trigger testing.
+            q_vals = q_vals + 1000  # TODO: temporary mock multiplier for trigger testing.
             rp = discharge_to_return_period(
                 q_vals[None, :], u, sigma, xi, lam
             ).ravel()
@@ -1402,7 +1402,7 @@ def detect_flood_events(
                     )
                     if q_vals is None:
                         continue
-                    q_vals = q_vals * 10  # TODO: temporary mock multiplier for trigger testing.
+                    q_vals = q_vals + 1000  # TODO: temporary mock multiplier for trigger testing.
 
                     q_snapshot = pd.Series(q_vals, index=basin_cells)
                     depth_raster = patch_dir_path / (
