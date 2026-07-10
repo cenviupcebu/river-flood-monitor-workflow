@@ -921,7 +921,6 @@ def _detect_flood_patches_for_lead(
             )
             if q_vals is None:
                 continue
-            q_vals = q_vals + 1000  # TODO: temporary mock multiplier for trigger testing.
             rp = discharge_to_return_period(
                 q_vals[None, :], u, sigma, xi, lam
             ).ravel()
@@ -1402,7 +1401,6 @@ def detect_flood_events(
                     )
                     if q_vals is None:
                         continue
-                    q_vals = q_vals + 1000  # TODO: temporary mock multiplier for trigger testing.
 
                     q_snapshot = pd.Series(q_vals, index=basin_cells)
                     depth_raster = patch_dir_path / (
