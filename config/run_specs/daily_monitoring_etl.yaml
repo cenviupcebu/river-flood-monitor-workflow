@@ -8,8 +8,6 @@ ingest:
 inputs:
   # OEP risk curves (thresholds)
   oep_json: "config/risk_profiles/{basin}_oep_curves_all_units.json"
-  # basin configuration
-  basin_config: "config/basin/{basin}_basin.yaml"
   # EVT calibration output (Parquet with GPD fits per GloFAS cell)
   evt_params_parquet: "config/risk_profiles/{basin}_evt_pot_calibration.parquet"
   # JRC Global Flood Hazard Map root (subdirectories with RP-labelled TIFFs)
@@ -44,7 +42,7 @@ decision:
   persist_days: 2     # consecutive qualifying lead-days required
   max_lead: 5         # latest operational lead day
   min_lead: 1         # earliest operational lead day
-  oep_min: 100        # exclude units with OEP_RP2 < 100 (no exposure model)
+  oep_min: 0          # exclude units with OEP_RP2 < 0 (no exposure model)
   rule_tiers:
     T1:
       rp: 2

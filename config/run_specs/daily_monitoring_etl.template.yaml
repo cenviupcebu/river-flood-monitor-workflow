@@ -46,7 +46,7 @@ decision:
   persist_days: 2     # consecutive qualifying lead-days required
   max_lead: 5         # latest operational lead day
   min_lead: 1         # earliest operational lead day
-  oep_min: 100        # exclude units with OEP_RP2 < 100 (no exposure model)
+  oep_min: 0          # exclude units with OEP_RP2 < 0 (no exposure model)
   rule_tiers:
     T1:
       rp: 2
