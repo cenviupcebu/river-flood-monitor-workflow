@@ -53,7 +53,7 @@ The workflow is running as the following steps in order:
 For full workflow run:
 ```bash
 uv run flood-monitoring `
-    --run-spec config/run_specs/daily_monitoring_etl.yaml `
+    --run-spec config/run_specs/daily_monitoring.yaml `
     --basins cagayan
 ```
 
@@ -62,7 +62,7 @@ The workflow also supports modular execution. If only specific steps (extract, f
 This can be done by adding flags `--<step>` to the cli.
 ```bash
 uv run flood-monitoring `
-    --run-spec config/run_specs/daily_monitoring_etl.yaml `
+    --run-spec config/run_specs/daily_monitoring.yaml `
     --basins cagayan `
     --extract
 ```
@@ -70,7 +70,7 @@ uv run flood-monitoring `
 You can also run multiple basins at once:
 ```bash
 uv run flood-monitoring `
-    --run-spec config/run_specs/daily_monitoring_etl.yaml `
+    --run-spec config/run_specs/daily_monitoring.yaml `
     --basins cagayan abra ilocos
 ```
 
@@ -80,48 +80,47 @@ uv run flood-monitoring `
 river-flood-workflow/
 ├── pyproject.toml                 project dependencies
 ├── uv.lock                        locked dependency versions
+├── README.md
 ├── uv-sync.ps1                    Windows bootstrap
 ├── uv-sync.sh                     Linux/macOS bootstrap
-├── workflow.ipynb                 notebook workflow
 │
 ├── config/
-│   ├── config.yaml                project-level config
-│   ├── basins/
-│   │   └── Cagayan_01.yaml
+│   ├── risk_profiles/
+│   │   ├── bicol_oep_curves_all_units.json
+│   │   └── cagayan_oep_curves_all_units.json
 │   └── run_specs/
-│       ├── daily_monitoring_etl.yaml
-│       └── daily_monitoring_etl.template.yaml
+│       ├── daily_monitoring.yaml
+│       └── daily_monitoring.template.yaml
 │
 ├── data/
-│   ├── admin-areas/
+│   ├── admin-areas
 │   ├── bronze/
+│   │   ├── glofas/forecast/
+│   │   ├── jrc_flood_maps/
+│   │   └── population/
 │   ├── silver/
+│   ├── etl_step_cache/
 │   └── gold/
 ├── data_update/
 │   ├── download_jrc_flood_tiles.py
 │   └── README.md
+│ 
 ├── logs/
-│   └── YYYY/MM/*.txt              run logs by month
+│   └── YYYY/MM/                   run logs by year/month
 │
-├── src/river_flood_monitoring/
-│   ├── __init__.py
-│   ├── cli.py                     console-script: flood-monitoring
-│   ├── cli_step_flags.py          pipeline step toggles
-│   ├── config.py                  config loading helpers
-│   ├── logging.py                 logging helpers
-│   └── etl/
-│       ├── __init__.py
-│       ├── extract.py
-│       ├── extract-example.py
-│       ├── forecast.py
-│       ├── pipeline.py
-│       ├── pipeline_step_flags.py
-│       ├── prepare.py                legacy helper, not used by the ETL workflow
-│       ├── run_spec.py
-│       ├── save.py
-│       └── utils.py
-│
-└── tests/
-    ├── test_etl_rules.py
-    └── test_step3_impact.py
+└──  src/river_flood_monitoring/
+    ├──  __init__.py
+    ├── cli.py                     console-script: flood-monitoring
+    ├── config.py                  config loading helpers
+    ├── logging.py                 logging helpers
+    └── etl/
+        ├── __init__.py
+        ├── extract-example.py
+        ├── extract.py
+        ├── forecast.py
+        ├── pipeline.py
+        ├── prepare.py
+        ├── run_spec.py
+        ├── save.py
+        └── utils.py
 ```
