@@ -12,16 +12,16 @@ extract-example.py        Example extraction helpers for experimentation.
 
 Public API
 ----------
->>> from river_flood_monitoring.etl import run_daily_monitoring_etl
->>> results, out_file = run_daily_monitoring_etl(issue_date, basin_names, run_spec_path)
+>>> from river_flood_monitoring.etl import run_daily_monitoring
+>>> results, out_file = run_daily_monitoring(issue_date, basin_names, run_spec_path)
 """
 
 from .run_spec import PipelineRunSpec, load_run_spec
-from .pipeline import run_daily_monitoring_etl
+from .pipeline import run_daily_monitoring
 from .utils import BasinRunOutput, UnitDecision
 
 __all__ = [
-    "run_daily_monitoring_etl",
+    "run_daily_monitoring",
     "load_run_spec",
     "PipelineRunSpec",
     "BasinRunOutput",

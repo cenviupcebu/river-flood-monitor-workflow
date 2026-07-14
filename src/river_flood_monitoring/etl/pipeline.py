@@ -25,7 +25,7 @@ from .utils import BasinRunOutput, TierDecision, UnitDecision, expand_template
 logger = get_logger(__name__)
 
 
-def run_daily_monitoring_etl(
+def run_daily_monitoring(
     issue_date: date,
     basin_names: List[str],
     run_spec_path: str,
@@ -58,7 +58,7 @@ def run_daily_monitoring_etl(
     )
 
     logger.info(
-        "run_daily_monitoring_etl started — run='%s', issue_date=%s, basins=%d, "
+        "run_daily_monitoring started — run='%s', issue_date=%s, basins=%d, "
         "steps=[extract=%s, forecast=%s, save=%s], log=%s",
         run_spec.run_name,
         issue_date,
@@ -125,7 +125,7 @@ def run_daily_monitoring_etl(
             if tier.fired
         )
         logger.info(
-            "run_daily_monitoring_etl complete — %d basins, %d tier fires, activation=%s, operational_information=%s",
+            "run_daily_monitoring complete — %d basins, %d tier fires, activation=%s, operational_information=%s",
             len(basin_results),
             total_fired,
             activation_file,
@@ -136,17 +136,17 @@ def run_daily_monitoring_etl(
     if do_forecast:
         total_units = sum(len(v.get("units", [])) for v in forecast_by_basin.values())
         logger.info(
-            "run_daily_monitoring_etl complete (no save) — forecast artifacts=%d, units=%d",
+            "run_daily_monitoring complete (no save) — forecast artifacts=%d, units=%d",
             len(forecast_by_basin),
             total_units,
         )
     elif do_extract:
         logger.info(
-            "run_daily_monitoring_etl complete (extract only) — artifacts=%d",
+            "run_daily_monitoring complete (extract only) — artifacts=%d",
             len(extracted_by_basin),
         )
     else:
-        logger.info("run_daily_monitoring_etl complete (no steps executed)")
+        logger.info("run_daily_monitoring complete (no steps executed)")
 
     return [], None
 
@@ -354,5 +354,5 @@ __all__ = [
     "extract",
     "forecast",
     "save",
-    "run_daily_monitoring_etl",
+    "run_daily_monitoring",
 ]

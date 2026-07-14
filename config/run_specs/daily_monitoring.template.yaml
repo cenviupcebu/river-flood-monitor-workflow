@@ -1,11 +1,11 @@
-# Copy this file to daily_monitoring_etl.yaml and fill in the input data paths.
+# Copy this file to daily_monitoring.yaml and fill in the input data paths.
 
 run_name: "daily_flood_monitoring"
 
 ingest:
   # Path to the GloFAS ensemble NetCDF forecast files for this issue date.
   forecast_path_template: "data/bronze/glofas/forecast/dis_{ens_no}_{yyyymmdd}00.nc"
-  download_if_missing: false
+  download_if_missing: false  # TODO: to remove
 
 inputs:
   # OEP risk curves (thresholds)

@@ -8,7 +8,7 @@ import sys
 from typing import List
 
 from river_flood_monitoring.config import normalize_basin_names, ALLOWED_BASINS
-from river_flood_monitoring.etl.pipeline import run_daily_monitoring_etl
+from river_flood_monitoring.etl.pipeline import run_daily_monitoring
 from river_flood_monitoring.logging import get_logger
 
 logger = get_logger(__name__)
@@ -55,7 +55,7 @@ def main(
         return 1
 
     try:
-        results, output_file = run_daily_monitoring_etl(
+        results, output_file = run_daily_monitoring(
             issue_date=issue,
             basin_names=basin_names,
             run_spec_path=run_spec,
