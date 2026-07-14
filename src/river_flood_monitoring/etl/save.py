@@ -85,17 +85,10 @@ def save(
     # Use operational_information (ADM3 only) for plotting
     fired_df = _prepare_trigger_decisions_for_plotting(trigger_df=operational_information_df)
 
-    map_plots = _plot_activated_areas(
+    map_plots = _plot_population_exposed(
         run_spec=run_spec,
         trigger_df=operational_information_df,
         fired_df=fired_df,
-    )
-    map_plots.extend(
-        _plot_population_exposed(
-            run_spec=run_spec,
-            trigger_df=operational_information_df,
-            fired_df=fired_df,
-        )
     )
     map_files = _save_maps(
         map_plots=map_plots,
