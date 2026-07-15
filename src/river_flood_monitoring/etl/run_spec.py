@@ -38,8 +38,6 @@ class IngestSettings:
     """Forecast file location settings for Extract"""
 
     forecast_path_template: str
-    download_if_missing: bool = False
-    downloader_command_template: Optional[str] = None
 
 
 @dataclass
@@ -164,8 +162,6 @@ def load_run_spec(path: str) -> PipelineRunSpec:
     if ingest_cfg.get("forecast_path_template"):
         ingest = IngestSettings(
             forecast_path_template=str(ingest_cfg["forecast_path_template"]),
-            download_if_missing=bool(ingest_cfg.get("download_if_missing", False)),
-            downloader_command_template=ingest_cfg.get("downloader_command_template"),
         )
 
     inputs = None

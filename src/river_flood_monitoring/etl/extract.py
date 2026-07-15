@@ -103,11 +103,6 @@ def _resolve_forecast_path(
             return [str(candidate)]
 
     logger.warning("Forecast file(s) not found: %s", candidate)
-    if run_spec.ingest.download_if_missing:
-        raise NotImplementedError(
-            "download_if_missing=True but automatic download is not yet implemented. "
-            "Continuing without forecast."
-        )
     return None
 
 

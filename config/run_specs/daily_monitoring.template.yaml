@@ -5,7 +5,6 @@ run_name: "daily_flood_monitoring"
 ingest:
   # Path to the GloFAS ensemble NetCDF forecast files for this issue date.
   forecast_path_template: "data/bronze/glofas/forecast/dis_{ens_no}_{yyyymmdd}00.nc"
-  download_if_missing: false  # TODO: to remove
 
 inputs:
   # OEP risk curves (thresholds)
