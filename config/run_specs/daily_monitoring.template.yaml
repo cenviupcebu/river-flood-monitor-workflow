@@ -2,8 +2,8 @@
 
 run_name: "daily_flood_monitoring"
 
-# Target ADM2 provinces per basin
 target_adm2_pcodes:
+  # Target ADM2 provinces per basin
   cagayan: ["PH02015"]     # Cagayan basin: Cagayan province
   bicol: ["PH05017"]       # Bicol basin: Camarines Sur province
 
