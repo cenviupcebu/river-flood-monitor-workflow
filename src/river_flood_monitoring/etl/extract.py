@@ -113,8 +113,6 @@ def _load_oep_thresholds(
     """
     Load per-unit OEP impact thresholds from JSON.
 
-    Units whose RP2 threshold is below ``oep_min`` are excluded.
-
     Returns
     -------
     tuple
@@ -145,16 +143,18 @@ def _load_oep_thresholds(
                 rp_map[rp] = float(oep_rl[idx])
             except (TypeError, ValueError):
                 continue
-        if rp_map.get(2, 0.0) >= oep_min:
-            thresholds[unit_id] = rp_map
-            unit_metadata[unit_id] = {
-                "level": str(rec.get("level", "") or "").strip(),
-                "name": str(rec.get("name", "") or "").strip(),
-                "pcode": str(pcode).strip(),
-            }
+        if not rp_map:
+            continue
+
+        thresholds[unit_id] = rp_map
+        unit_metadata[unit_id] = {
+            "level": str(rec.get("level", "") or "").strip(),
+            "name": str(rec.get("name", "") or "").strip(),
+            "pcode": str(pcode).strip(),
+        }
 
     logger.info(
-        "OEP thresholds loaded: %d qualifying units (from %d total, oep_min=%.0f)",
+        "OEP thresholds loaded: %d units with valid thresholds (from %d total, oep_min=%.0f)",
         len(thresholds),
         len(raw.get("units", [])),
         oep_min,
