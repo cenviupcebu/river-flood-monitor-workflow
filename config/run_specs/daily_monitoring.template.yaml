@@ -1,0 +1,75 @@
+# Copy this file to daily_monitoring.yaml and fill in the input data paths.
+
+run_name: "daily_flood_monitoring"
+
+target_adm2_pcodes:
+  # Target ADM2 provinces per basin
+  cagayan: ["PH02015"]     # Cagayan basin: Cagayan province
+  bicol: ["PH05017"]       # Bicol basin: Camarines Sur province
+
+ingest:
+  # Path to the GloFAS ensemble NetCDF forecast files for this issue date.
+  forecast_path_template: "data/bronze/glofas/forecast/dis_{ens_no}_{yyyymmdd}00.nc"
+
+inputs:
+  # OEP risk curves (thresholds)
+  oep_json: "config/risk_profiles/{basin}_<filename>.json"
+  # basin configuration
+  basin_config: "config/basin/{basin}_<filename>.yaml"
+  # EVT calibration output (Parquet with GPD fits per GloFAS cell)
+  evt_params_parquet: "config/risk_profiles/{basin}_<filename>.parquet"
+  # JRC Global Flood Hazard Map root (subdirectories with RP-labelled TIFFs)
+  jrc_root: "data/bronze/jrc_flood_maps"
+  # WorldPop population raster (GeoTIFF, EPSG:4326)
+  worldpop_tif: "data/bronze/population/<filename>.tif"
+  # Municipality (administrative level 3 - adm3) boundaries (GeoJSON or Shapefile, EPSG:4326)
+  adm3_geojson: "data/admin-areas/<filename>.geojson"
+  # ADM3 column name in the OEP JSON and adm3_geojson files
+  adm3_unit_column: "adm3_pcode"
+
+detection:   # Detection algorithm hyper-parameters
+  # Discharge RP threshold: a GloFAS cell is "active" when RP >= t0_years
+  t0_years: 2.0
+  # Minimum contiguous flood patch area (km²) to qualify a member as a flood member
+  a_min_km2: 100.0
+  # Flood depth (metres) for counting affected population (WorldPop)
+  depth_threshold_m: 0.02
+  # 8-neighbour (Moore=2) or 4-neighbour (von Neumann=1) connectivity
+  cc_connectivity: 2
+  # NetCDF variable name for discharge
+  forecast_var_name: "dis"
+  # Return periods to compute in impact space (drives tier thresholds)
+  flood_detect_rps: [2, 5, 10, 20]
+  # Maximum return period used when converting discharge to RP
+  rp_cap: 500.0
+  # Expected number of ensemble members in the forecast files
+  total_ensemble_members: 51
+
+decision:
+  # Activation rules
+  persist_days: 2     # consecutive qualifying lead-days required
+  max_lead: 5         # latest operational lead day
+  min_lead: 1         # earliest operational lead day
+  oep_min: 0          # exclude units with OEP_RP2 < 0 (no exposure model)
+  rule_tiers:
+    T1:
+      rp: 2
+      p_thr: 0.50
+      n_req: 1
+      label: "Moderate Watch"
+    T2:
+      rp: 5
+      p_thr: 0.50
+      n_req: 1
+      label: "High Alert"
+    T3:
+      rp: 10
+      p_thr: 0.35
+      n_req: 1
+      label: "Very High Activation"
+
+output:
+  # Directory to write trigger decisions.
+  output_dir_template: "data/gold/trigger_decisions/{date}"
+  # Log files: logs/{yyyy}/{mm}/<run_name>_<datetime>.txt
+  log_dir_template: "logs/{yyyy}/{mm}"

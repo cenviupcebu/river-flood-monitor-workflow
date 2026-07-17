@@ -1,14 +1,73 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "river-flood-workflow"
+name = "flood-ops"
 version = "0.1.0"
-description = "Workflow for river flood forecast"
-authors = [
-    {name="David Urueña Ramirez", email="duruenaramirez@redcross.nl"},
-    {name="Phuoc Phung", email="pphung@redcross.nl"},
-]
+description = "Standalone operational ETL pipeline for flood trigger monitoring"
 readme = "README.md"
-requires-python = ">=3.13"
-dependencies = [
-    "ipykernel>=7.2.0",
-    "jupyter>=1.1.1",
+requires-python = ">=3.9,<3.13"
+authors = [
+  {name = "Flood Ops Team"}
 ]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Scientific/Engineering",
+]
+dependencies = [
+  "climada>=4.0.0,<6.1",
+  "climada-petals>=4.0.2,<5.0.0",
+  "geopandas",
+  "ipywidgets>=7.6.0",
+  "numpy",
+  "pandas",
+  "pyarrow",
+  "PyYAML>=6.0",
+  "requests>=2.28",
+  "pyextremes>=2.3.0",
+  "rasterio",
+  "scipy",
+  "xarray",
+]
+
+[project.urls]
+Source = "https://github.com/rodekruis/river-flood-workflow"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7",
+  "pytest-cov>=4",
+  "ruff>=0.1",
+  "black>=24",
+]
+
+[project.scripts]
+flood-monitoring = "river_flood_monitoring.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+exclude = ["tests*"]
+
+[tool.ruff]
+line-length = 88
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

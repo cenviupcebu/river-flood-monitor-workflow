@@ -1,23 +1,34 @@
-# uv
+# Python / virtual environment
 .venv/
-
-# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
-dist/
-build/
+.python-version
 
-# Jupyter
-.ipynb_checkpoints/
+# uv artefacts
+uv.lock          # commit this if you want reproducible installs
+.uv/
+
+# Data — never commit raw forecast files or processed outputs
+data/bronze/
+data/silver/
+data/gold/
+
+# Logs
+logs/
+
+# Outputs
+outputs/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Logs
-logs/
+# Editor
+.vscode/
+.idea/
+*.swp
 
-# Data
-silver/
-gold/
+# Secrets / env
+.env
+*.secret
