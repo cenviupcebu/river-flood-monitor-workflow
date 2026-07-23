@@ -68,7 +68,7 @@ def save(
             timestamp=output_ctx["timestamp"],
         )
 
-    decision_summary_payload = _prepare_decision_summary(basin_results)
+    decision_summary_payload = _prepare_decision_summary(activation_df)
     decision_summary_file = None
     if decision_summary_payload is not None:
         decision_summary_file = _save_decision_summary_file(
@@ -236,16 +236,15 @@ def _save_operational_information(
     return out_file
 
 
-def _prepare_decision_summary(basin_results: List[BasinRunOutput]) -> Dict[str, Any] | None:
-    """Create decision summary content for downstream automation."""
-    total_fired = sum(
-        1
-        for basin in basin_results
-        for unit in basin.units
-        for tier in unit.tiers
-        if tier.fired
+def _prepare_decision_summary(activation_df: pd.DataFrame) -> Dict[str, Any] | None:
+    """Create decision summary content from activation (ADM2) rows only."""
+    if activation_df.empty or "fired" not in activation_df.columns:
+        return None
+
+    fired_mask = activation_df["fired"].map(
+        lambda value: bool(value) if isinstance(value, bool) else str(value).strip().lower() == "true"
     )
-    if total_fired <= 0:
+    if not fired_mask.any():
         return None
 
     return {

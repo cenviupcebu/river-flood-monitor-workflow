@@ -228,6 +228,7 @@ def _apply_tier_rules(
 
         tier_results: List[TierDecision] = []
         for rule in decision.rules:
+            tier_threshold = unit_thresholds.get(rule.rp)
             fire_lead: Optional[int] = None
             if meets_oep_min:
                 firing = [
@@ -242,6 +243,7 @@ def _apply_tier_rules(
                 )
             prob_at_fire: Optional[float] = None
             impact_population_at_fire: Optional[float] = None
+            mean_impact_condition_met = False
             if fire_lead is not None:
                 prob_at_fire = lead_map.get(fire_lead, {}).get(rule.rp)
                 per_member_at_fire = impact_cube.get(unit_id, {}).get(fire_lead, {})
@@ -251,6 +253,14 @@ def _apply_tier_rules(
                         for member in member_list
                     ]
                     impact_population_at_fire = sum(impact_values) / len(impact_values)
+                mean_impact_condition_met = (
+                    impact_population_at_fire is not None
+                    and tier_threshold is not None
+                    and float(impact_population_at_fire) >= float(tier_threshold)
+                )
+
+            fired = fire_lead is not None and mean_impact_condition_met
+            if fired:
                 fired_count += 1
                 logger.info(
                     "Tier %s FIRED — unit='%s', fire_lead=%d, p=%.2f",
@@ -259,16 +269,25 @@ def _apply_tier_rules(
                     fire_lead,
                     prob_at_fire or 0.0,
                 )
+            elif fire_lead is not None:
+                logger.info(
+                    "Tier %s NOT FIRED (mean impact gate) — unit='%s', fire_lead=%d, mean_impact=%.2f, threshold=%.2f",
+                    rule.name,
+                    unit_id,
+                    fire_lead,
+                    float(impact_population_at_fire or 0.0),
+                    float(tier_threshold or 0.0),
+                )
 
             tier_results.append(
                 TierDecision(
                     tier=rule.name,
                     rp=rule.rp,
                     p_threshold=rule.p_thr,
-                    fired=fire_lead is not None,
+                    fired=fired,
                     fire_lead=fire_lead,
                     probability_at_fire=prob_at_fire,
-                    impact_population_threshold=unit_thresholds.get(rule.rp),
+                    impact_population_threshold=tier_threshold,
                     impact_population_at_fire=impact_population_at_fire,
                 )
             )
